@@ -1,0 +1,250 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-live: var(--live);
+  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+:root {
+  --radius: 0.5rem;
+  /* Paper & ink — editorial, calm */
+  --background: oklch(0.985 0.003 90);
+  --foreground: oklch(0.18 0.01 260);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.01 260);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.18 0.01 260);
+  --primary: oklch(0.22 0.02 260);
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.96 0.005 90);
+  --secondary-foreground: oklch(0.22 0.02 260);
+  --muted: oklch(0.955 0.004 90);
+  --muted-foreground: oklch(0.48 0.01 260);
+  --accent: oklch(0.55 0.18 258);
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.55 0.22 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.90 0.004 90);
+  --input: oklch(0.93 0.004 90);
+  --ring: oklch(0.55 0.18 258);
+  --live: oklch(0.65 0.18 150);
+  --chart-1: oklch(0.55 0.18 258);
+  --chart-2: oklch(0.65 0.15 200);
+  --chart-3: oklch(0.65 0.18 150);
+  --chart-4: oklch(0.70 0.17 60);
+  --chart-5: oklch(0.60 0.20 20);
+  --sidebar: oklch(0.98 0.003 90);
+  --sidebar-foreground: oklch(0.28 0.01 260);
+  --sidebar-primary: oklch(0.22 0.02 260);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.94 0.005 90);
+  --sidebar-accent-foreground: oklch(0.18 0.01 260);
+  --sidebar-border: oklch(0.90 0.004 90);
+  --sidebar-ring: oklch(0.55 0.18 258);
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    letter-spacing: -0.015em;
+  }
+
+  .font-display {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+  }
+}
+
+/* 3D stage: a lit room built from square boxes — back wall grid + perspective floor */
+@utility stage-bg {
+  position: relative;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(1100px 620px at 50% -8%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 62%),
+    radial-gradient(1200px 260px at 50% 58%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(900px 520px at 100% 100%, color-mix(in oklab, var(--chart-2) 10%, transparent), transparent 62%);
+  isolation: isolate;
+
+  /* back wall — grid receding away from the viewer */
+  &::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 42% 0;
+    z-index: 0;
+    pointer-events: none;
+    transform: perspective(700px) rotateX(-52deg);
+    transform-origin: bottom center;
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--foreground) 16%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 16%, transparent) 1px, transparent 1px);
+    background-size: 80px 80px;
+    mask-image: linear-gradient(to bottom, transparent 4%, black 60%, black 100%);
+    animation: room-drift 40s linear infinite;
+  }
+
+  /* floor — same grid, sweeping toward the viewer */
+  &::after {
+    content: "";
+    position: fixed;
+    inset: 56% 0 -10% 0;
+    z-index: 0;
+    pointer-events: none;
+    transform: perspective(520px) rotateX(74deg);
+    transform-origin: top center;
+    background-image:
+      linear-gradient(to right, color-mix(in oklab, var(--foreground) 14%, transparent) 1px, transparent 1px),
+      linear-gradient(to bottom, color-mix(in oklab, var(--accent) 26%, transparent) 1px, transparent 1px);
+    background-size: 80px 80px;
+    mask-image: linear-gradient(to bottom, black 0%, color-mix(in oklab, black 45%, transparent) 45%, transparent 88%);
+    animation: floor-run 7s linear infinite;
+  }
+}
+
+@keyframes floor-run {
+  from {
+    background-position:
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      0 0,
+      0 80px;
+  }
+}
+
+
+@keyframes room-drift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 76px 0, 0 76px; }
+}
+
+
+/* Elevated card with layered shadow — subtle 3D lift */
+@utility card-3d {
+  box-shadow:
+    0 1px 0 0 color-mix(in oklab, var(--foreground) 4%, transparent) inset,
+    0 1px 2px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
+    0 8px 24px -12px color-mix(in oklab, var(--foreground) 14%, transparent);
+  transition: transform 200ms ease, box-shadow 200ms ease;
+  &:hover {
+    box-shadow:
+      0 1px 0 0 color-mix(in oklab, var(--foreground) 4%, transparent) inset,
+      0 2px 4px 0 color-mix(in oklab, var(--foreground) 8%, transparent),
+      0 16px 40px -16px color-mix(in oklab, var(--foreground) 18%, transparent);
+  }
+}
+
+/* Interactive pop — subtle lift + press for buttons */
+@utility btn-pop {
+  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  &:hover:not(:disabled) { transform: translateY(-1px); }
+  &:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+}
+
+@utility live-dot {
+  position: relative;
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: var(--live);
+  box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 55%, transparent);
+  animation: live-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite;
+}
+
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 55%, transparent); }
+  70%  { box-shadow: 0 0 0 6px color-mix(in oklab, var(--live) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 0%, transparent); }
+}
+
+@keyframes caret-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@utility caret {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1em;
+  vertical-align: -0.15em;
+  background: var(--foreground);
+  margin-left: 2px;
+  animation: caret-blink 1s steps(1) infinite;
+}
+
+/* Agent markdown rendering */
+.agent-md > :first-child { margin-top: 0; }
+.agent-md > :last-child { margin-bottom: 0; }
+.agent-md h2 { font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.35rem; }
+.agent-md h3 { font-size: 0.8rem; font-weight: 600; margin: 0.6rem 0 0.25rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.04em; }
+.agent-md p { margin: 0.35rem 0; }
+.agent-md ul, .agent-md ol { margin: 0.35rem 0; padding-left: 1.1rem; list-style: disc; }
+.agent-md ol { list-style: decimal; }
+.agent-md li { margin: 0.15rem 0; }
+.agent-md strong { font-weight: 600; }
+.agent-md code { font-family: var(--font-mono); font-size: 0.85em; background: var(--background); padding: 0 0.25em; border-radius: 3px; }
+.agent-md table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.75rem; }
+.agent-md th, .agent-md td { border: 1px solid var(--border); padding: 0.25rem 0.4rem; text-align: left; }
+.agent-md th { background: var(--background); font-weight: 600; }
+.agent-md hr { border-color: var(--border); margin: 0.6rem 0; }

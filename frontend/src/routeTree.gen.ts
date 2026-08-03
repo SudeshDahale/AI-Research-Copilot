@@ -9,27 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AppRouteImport } from './routes/_app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AppSearchRouteImport } from './routes/_app.search'
-import { Route as AppReviewRouteImport } from './routes/_app.review'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppLibraryRouteImport } from './routes/_app.library'
+import { Route as AppReviewRouteImport } from './routes/_app.review'
+import { Route as AppSearchRouteImport } from './routes/_app.search'
+import { Route as AppPapersIdRouteImport } from './routes/_app.papers.$id'
 import { Route as AppWorkflowIndexRouteImport } from './routes/_app.workflow.index'
 import { Route as AppWorkflowIdRouteImport } from './routes/_app.workflow.$id'
-import { Route as AppPapersIdRouteImport } from './routes/_app.papers.$id'
 
-const AppRoute = AppRouteImport.update({
-  id: '/_app',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppSearchRoute = AppSearchRouteImport.update({
-  id: '/search',
-  path: '/search',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AppLibraryRoute = AppLibraryRouteImport.update({
+  id: '/library',
+  path: '/library',
   getParentRoute: () => AppRoute,
 } as any)
 const AppReviewRoute = AppReviewRouteImport.update({
@@ -37,9 +37,14 @@ const AppReviewRoute = AppReviewRouteImport.update({
   path: '/review',
   getParentRoute: () => AppRoute,
 } as any)
-const AppLibraryRoute = AppLibraryRouteImport.update({
-  id: '/library',
-  path: '/library',
+const AppSearchRoute = AppSearchRouteImport.update({
+  id: '/search',
+  path: '/search',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPapersIdRoute = AppPapersIdRouteImport.update({
+  id: '/papers/$id',
+  path: '/papers/$id',
   getParentRoute: () => AppRoute,
 } as any)
 const AppWorkflowIndexRoute = AppWorkflowIndexRouteImport.update({
@@ -50,11 +55,6 @@ const AppWorkflowIndexRoute = AppWorkflowIndexRouteImport.update({
 const AppWorkflowIdRoute = AppWorkflowIdRouteImport.update({
   id: '/workflow/$id',
   path: '/workflow/$id',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppPapersIdRoute = AppPapersIdRouteImport.update({
-  id: '/papers/$id',
-  path: '/papers/$id',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -125,13 +125,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/_app': {
-      id: '/_app'
-      path: ''
-      fullPath: '/'
-      preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -139,11 +132,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_app/search': {
-      id: '/_app/search'
-      path: '/search'
-      fullPath: '/search'
-      preLoaderRoute: typeof AppSearchRouteImport
+    '/_app': {
+      id: '/_app'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_app/library': {
+      id: '/_app/library'
+      path: '/library'
+      fullPath: '/library'
+      preLoaderRoute: typeof AppLibraryRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/review': {
@@ -153,11 +153,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReviewRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/library': {
-      id: '/_app/library'
-      path: '/library'
-      fullPath: '/library'
-      preLoaderRoute: typeof AppLibraryRouteImport
+    '/_app/search': {
+      id: '/_app/search'
+      path: '/search'
+      fullPath: '/search'
+      preLoaderRoute: typeof AppSearchRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/papers/$id': {
+      id: '/_app/papers/$id'
+      path: '/papers/$id'
+      fullPath: '/papers/$id'
+      preLoaderRoute: typeof AppPapersIdRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/workflow/': {
@@ -172,13 +179,6 @@ declare module '@tanstack/react-router' {
       path: '/workflow/$id'
       fullPath: '/workflow/$id'
       preLoaderRoute: typeof AppWorkflowIdRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/papers/$id': {
-      id: '/_app/papers/$id'
-      path: '/papers/$id'
-      fullPath: '/papers/$id'
-      preLoaderRoute: typeof AppPapersIdRouteImport
       parentRoute: typeof AppRoute
     }
   }
@@ -211,3 +211,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

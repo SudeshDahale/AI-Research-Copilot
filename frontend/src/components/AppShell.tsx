@@ -17,13 +17,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<Session | null>(null);
   const [open, setOpen] = useState(false);
 
+  // replace the useEffect body:
   useEffect(() => {
-    const s = getSession();
-    if (!s) {
-      navigate({ to: "/" });
-      return;
-    }
-    setSessionState(s);
+    let cancelled = false;
+    getSession().then((s) => {
+      if (cancelled) return;
+      if (!s) {
+        navigate({ to: "/" });
+        return;
+      }
+      setSessionState(s);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [navigate]);
 
   if (!session) return null;

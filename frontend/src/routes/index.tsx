@@ -3,7 +3,8 @@ import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { setSession } from "@/lib/session";
+import { ApiError } from "@/lib/api";
+import { enterAsGuest, loginOrRegister } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -26,14 +27,30 @@ export const Route = createFileRoute("/")({
 function Landing() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  const enter = (mode: "user" | "guest") => {
-    setSession(
-      mode === "user"
-        ? { mode: "user", name: email.split("@")[0] || "Researcher", email }
-        : { mode: "guest", name: "Guest" },
-    );
+  const enterAsGuestAndGo = () => {
+    enterAsGuest();
     navigate({ to: "/search" });
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      // Tries to log in first; if there's no account with this email yet,
+      // loginOrRegister creates one — same one-field "Get started" flow as
+      // before, backed by real accounts instead of localStorage.
+      await loginOrRegister(email, password, email.split("@")[0] || "Researcher");
+      navigate({ to: "/search" });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -44,7 +61,7 @@ function Landing() {
           <span className="font-display text-xl">Arclight</span>
         </div>
         <button
-          onClick={() => enter("guest")}
+          onClick={enterAsGuestAndGo}
           className="text-sm text-muted-foreground hover:text-foreground"
         >
           Continue as guest →
@@ -62,28 +79,35 @@ function Landing() {
           Built for libraries of thousands.
         </p>
 
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            enter("user");
-          }}
-          className="mt-10 flex w-full max-w-md gap-2"
-        >
-          <Input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@lab.edu"
-            className="h-11 bg-card"
-          />
-          <Button type="submit" size="lg" className="h-11">
-            Get started <ArrowRight className="ml-1 h-4 w-4" />
-          </Button>
+        <form onSubmit={submit} className="mt-10 flex w-full max-w-md flex-col gap-2">
+          <div className="flex w-full gap-2">
+            <Input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@lab.edu"
+              className="h-11 bg-card"
+            />
+            <Input
+              type="password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Password"
+              className="h-11 w-40 bg-card"
+            />
+            <Button type="submit" size="lg" className="h-11 shrink-0" disabled={submitting}>
+              {submitting ? "..." : "Get started"} <ArrowRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+          {error && <p className="text-xs text-destructive">{error}</p>}
         </form>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Free for individual researchers. No credit card.
+          Free for individual researchers. No credit card. New here? The same
+          form creates your account — just pick a password (min 8 characters).
         </p>
       </main>
 

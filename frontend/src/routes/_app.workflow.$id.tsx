@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, Download, FileText, FolderKanban, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useWorkspaces } from "@/lib/workspaces";
 import { useDocuments, type Doc } from "@/lib/documents";
-import { MOCK_PAPERS } from "@/lib/mock-data";
+import { getCachedPapers, searchCachedPapers } from "@/lib/paper-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AgentChat } from "@/components/agent/AgentChat";
@@ -39,7 +39,7 @@ function WorkspaceDetail() {
   const { docs, create: createDoc, remove: removeDoc } = useDocuments(id);
 
   const papers = useMemo(
-    () => (ws ? MOCK_PAPERS.filter((p) => ws.paperIds.includes(p.id)) : []),
+    () => (ws ? getCachedPapers(ws.paperIds) : []),
     [ws],
   );
 
@@ -91,15 +91,7 @@ function WorkspaceDetail() {
 
   const candidates = useMemo(() => {
     if (!ws) return [];
-    const needle = q.toLowerCase().trim();
-    return MOCK_PAPERS.filter(
-      (p) =>
-        !ws.paperIds.includes(p.id) &&
-        (!needle ||
-          p.title.toLowerCase().includes(needle) ||
-          p.abstract.toLowerCase().includes(needle) ||
-          p.tags.some((t) => t.toLowerCase().includes(needle))),
-    ).slice(0, 20);
+    return searchCachedPapers(q, ws.paperIds);
   }, [ws, q]);
 
   if (!ws) {
@@ -108,7 +100,7 @@ function WorkspaceDetail() {
         <h1 className="font-display text-3xl">Workspace not found</h1>
         <Link to="/workflow" className="mt-4 inline-block">
           <Button variant="outline" size="sm">
-            <ArrowLeft className="mr-1 h-4 w-4" /> Back to Workflow
+            <ArrowLeft className="mr-1 h-4 w-4" /> Back to Workspaces
           </Button>
         </Link>
       </div>
@@ -118,7 +110,7 @@ function WorkspaceDetail() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-6 py-6">
       <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
-        <Link to="/workflow" className="hover:text-foreground">Workflow</Link>
+        <Link to="/workflow" className="hover:text-foreground">Workspaces</Link>
         <span>/</span>
         <span className="text-foreground">{ws.name}</span>
       </div>
@@ -131,9 +123,9 @@ function WorkspaceDetail() {
           <div>
             {editing ? (
               <form
-                onSubmit={(e) => {
+                onSubmit={async (e) => {
                   e.preventDefault();
-                  rename(ws.id, name);
+                  await rename(ws.id, name);
                   setEditing(false);
                 }}
                 className="flex items-center gap-2"
@@ -192,9 +184,9 @@ function WorkspaceDetail() {
             size="sm"
             variant="ghost"
             className="btn-pop gap-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => {
+            onClick={async () => {
               if (confirm(`Delete workspace "${ws.name}"?`)) {
-                remove(ws.id);
+                await remove(ws.id);
                 navigate({ to: "/workflow" });
               }
             }}

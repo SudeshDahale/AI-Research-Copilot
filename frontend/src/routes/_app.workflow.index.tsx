@@ -9,9 +9,9 @@ import { Input } from "@/components/ui/input";
 export const Route = createFileRoute("/_app/workflow/")({
   head: () => ({
     meta: [
-      { title: "Workflow · Arclight" },
-      { name: "description", content: "Your research workspaces — scoped agent analysis on curated papers." },
-      { property: "og:title", content: "Workflow · Arclight" },
+      { title: "Workspaces · Arclight" },
+      { name: "description", content: "Manage your curated research workspaces." },
+      { property: "og:title", content: "Workspaces · Arclight" },
       { property: "og:description", content: "Scoped agent analysis on curated paper collections." },
     ],
   }),
@@ -23,12 +23,16 @@ function WorkflowPage() {
   const [name, setName] = useState("");
   const navigate = useNavigate();
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    const ws = create(name);
-    setName("");
-    navigate({ to: "/workflow/$id", params: { id: ws.id } });
+    try {
+      const ws = await create(name);
+      setName("");
+      navigate({ to: "/workflow/$id", params: { id: ws.id } });
+    } catch (err) {
+      console.error("Failed to create workspace:", err);
+    }
   };
 
   return (
@@ -38,7 +42,7 @@ function WorkflowPage() {
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm">
             <span className="live-dot" /> Scoped agent · per-workspace reasoning
           </div>
-          <h1 className="font-display text-4xl">Workflow</h1>
+          <h1 className="font-display text-4xl">Workspaces</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Curate papers into workspaces. The agent analyzes only what's inside — sharper, deeper, specific.
           </p>

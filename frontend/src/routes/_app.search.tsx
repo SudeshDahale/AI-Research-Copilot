@@ -20,6 +20,7 @@ import { AgentSteps } from "@/components/agent/AgentSteps";
 import { searchSteps, workspaceSteps, answerSteps, type Artifact } from "@/lib/agent-plan";
 import { buildAgentReply } from "@/lib/agent";
 import { useWorkspaces, type Workspace } from "@/lib/workspaces";
+import { cachePapers } from "@/lib/paper-cache";
 
 
 export const Route = createFileRoute("/_app/search")({
@@ -113,6 +114,7 @@ function SearchPage() {
         score: p.relevance ?? 0.0,
       }));
       setPapers(mapped);
+      cachePapers(mapped);
     } catch (err) {
       console.error("Search failed:", err);
       setPapers([]);
@@ -131,9 +133,9 @@ function SearchPage() {
       const picks = results.slice(0, 8);
       return {
         steps: workspaceSteps(active, results.length),
-        finish: () => {
+        finish: async () => {
           const name = active.length > 42 ? `${active.slice(0, 42)}…` : active;
-          const ws = create(name, picks.map((p) => p.id));
+          const ws = await create(name, picks.map((p) => p.id));
           const artifact: Artifact = {
             type: "workspace",
             id: ws.id,
@@ -173,13 +175,17 @@ function SearchPage() {
     setWsPickerOpen(false);
   };
 
-  const createWorkspaceFromSelection = () => {
+  const createWorkspaceFromSelection = async () => {
     const name = prompt("Name this workspace:", active);
     if (!name) return;
-    const ws = create(name, [...selected]);
-    setSelected(new Set());
-    setWsPickerOpen(false);
-    alert(`Workspace "${ws.name}" created with ${ws.paperIds.length} papers. Open it in Workflow.`);
+    try {
+      const ws = await create(name, [...selected]);
+      setSelected(new Set());
+      setWsPickerOpen(false);
+      alert(`Workspace "${ws.name}" created with ${ws.paperIds.length} papers. Open it in Workflow.`);
+    } catch (err) {
+      console.error("Failed to create workspace:", err);
+    }
   };
 
   return (

@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, search
+from app.api.v1 import auth, search, workspaces
 
 api_router = APIRouter()
 
@@ -13,8 +13,4 @@ async def healthz() -> dict[str, str]:
 
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
 api_router.include_router(search.router, prefix="/search", tags=["search"])
-
-
-# Sprint 2+ will add, e.g.:
-# from app.api.v1 import workspaces
-# api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
+api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])

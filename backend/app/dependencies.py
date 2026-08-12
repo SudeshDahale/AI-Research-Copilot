@@ -54,3 +54,22 @@ async def get_current_user(
         raise unauthorized
 
     return user
+
+
+async def get_current_user_optional(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    access_token: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None,
+    authorization: Annotated[str | None, Header()] = None,
+) -> User | None:
+    """FastAPI dependency: resolves the caller's User if token is present, else returns None."""
+    token = _extract_token(access_token, authorization)
+    if token is None:
+        return None
+
+    try:
+        user_id = decode_token(token)
+    except InvalidTokenError:
+        return None
+
+    result = await db.execute(select(User).where(User.id == user_id))
+    return result.scalar_one_or_none()

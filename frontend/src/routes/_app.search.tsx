@@ -9,8 +9,9 @@ import {
   FolderPlus,
   Plus,
 } from "lucide-react";
-import { MOCK_PAPERS } from "@/lib/mock-data";
-import { rankPapers, type Ranked } from "@/lib/rank";
+import { MOCK_PAPERS, type Paper } from "@/lib/mock-data";
+import { type Ranked } from "@/lib/rank";
+import { apiFetch } from "@/lib/api";
 import { downloadText, slugify, stamp } from "@/lib/download";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,9 @@ function SearchPage() {
 
   const [searching, setSearching] = useState(false);
   const [runId, setRunId] = useState(0);
+  const [papers, setPapers] = useState<Ranked[]>([]);
+  const [apiLoading, setApiLoading] = useState(false);
+  const [timersDone, setTimersDone] = useState(false);
 
 
   // selection for workspace
@@ -66,7 +70,7 @@ function SearchPage() {
 
   const results = useMemo(() => {
     if (!active) return [];
-    const filtered = MOCK_PAPERS.filter(
+    const filtered = papers.filter(
       (p) =>
         p.year >= yearRange[0] &&
         p.year <= yearRange[1] &&
@@ -74,21 +78,47 @@ function SearchPage() {
         (selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t))) &&
         (selectedVenues.length === 0 || selectedVenues.includes(p.journal)),
     );
-    const ranked = rankPapers(active, filtered).filter((p) => p.score > 0.14);
+    const ranked = filtered.filter((p) => p.score > 0.14);
+    if (sort === "relevance") ranked.sort((a, b) => b.score - a.score);
     if (sort === "recent") ranked.sort((a, b) => b.year - a.year);
     if (sort === "cited") ranked.sort((a, b) => b.citations - a.citations);
     return ranked;
-  }, [active, yearRange, minCites, selectedTags, selectedVenues, sort]);
+  }, [active, papers, yearRange, minCites, selectedTags, selectedVenues, sort]);
 
 
   useEffect(() => setSelected(new Set()), [active]);
 
-  const runSearch = (q: string) => {
+  useEffect(() => {
+    if (timersDone && !apiLoading) {
+      setSearching(false);
+    }
+  }, [timersDone, apiLoading]);
+
+  const runSearch = async (q: string) => {
     if (!q.trim()) return;
     setQuery(q);
     setActive(q);
     setSearching(true);
+    setTimersDone(false);
+    setApiLoading(true);
     setRunId((n) => n + 1);
+
+    try {
+      const data = await apiFetch<Paper[]>("/search", {
+        method: "POST",
+        body: JSON.stringify({ query: q }),
+      });
+      const mapped = data.map((p) => ({
+        ...p,
+        score: p.relevance ?? 0.0,
+      }));
+      setPapers(mapped);
+    } catch (err) {
+      console.error("Search failed:", err);
+      setPapers([]);
+    } finally {
+      setApiLoading(false);
+    }
   };
 
   // Agent task execution for the side chat — plans, runs steps, then acts.
@@ -382,7 +412,7 @@ function SearchPage() {
                     key={runId}
                     steps={searchSteps(active, results.length)}
                     size="lg"
-                    onDone={() => setSearching(false)}
+                    onDone={() => setTimersDone(true)}
                   />
                 </div>
               </div>

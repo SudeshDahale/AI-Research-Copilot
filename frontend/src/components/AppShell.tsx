@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV = [
   { to: "/library", label: "Library", icon: Library },
-  { to: "/workflow", label: "Workflow", icon: FolderKanban },
+  { to: "/workflow", label: "Workspaces", icon: FolderKanban },
   { to: "/search", label: "Discover", icon: Search },
   { to: "/review", label: "Reviews", icon: FileText },
 ] as const;

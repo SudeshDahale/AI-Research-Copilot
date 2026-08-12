@@ -30,7 +30,7 @@ export type ChatTool = { id: string; label: string; icon?: typeof FileText };
 
 export type Execution = {
   steps: PlanStep[];
-  finish: () => { text: string; artifact?: Artifact };
+  finish: () => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>;
 };
 
 type Msg = {
@@ -73,7 +73,7 @@ export function AgentChat({
   const [running, setRunning] = useState<{ steps: PlanStep[]; prompt: string; tag?: string } | null>(
     null,
   );
-  const finishRef = useRef<(() => { text: string; artifact?: Artifact }) | null>(null);
+  const finishRef = useRef<(() => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>) | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -109,8 +109,8 @@ export function AgentChat({
     setRunning({ steps: run.steps, prompt: text, tag });
   };
 
-  const completeRun = () => {
-    const result = finishRef.current?.() ?? { text: "" };
+  const completeRun = async () => {
+    const result = (await finishRef.current?.()) ?? { text: "" };
     const steps = running?.steps;
     const prompt = running?.prompt;
     finishRef.current = null;

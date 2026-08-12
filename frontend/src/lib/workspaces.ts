@@ -1,81 +1,142 @@
-import { useEffect, useState, useCallback } from "react";
-
-const KEY = "arc.workspaces";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/api";
 
 export type Workspace = {
   id: string;
   name: string;
   paperIds: string[];
-  createdAt: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
-function read(): Workspace[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as Workspace[]) : [];
-  } catch {
-    return [];
-  }
+export type BackendWorkspace = {
+  id: string;
+  name: string;
+  paper_ids: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+function mapWorkspace(bw: BackendWorkspace): Workspace {
+  return {
+    id: bw.id,
+    name: bw.name,
+    paperIds: bw.paper_ids || [],
+    createdAt: bw.created_at,
+    updatedAt: bw.updated_at,
+  };
 }
 
-function write(ws: Workspace[]) {
-  window.localStorage.setItem(KEY, JSON.stringify(ws));
-  window.dispatchEvent(new CustomEvent("arc:workspaces"));
-}
+// Query key for workspaces cache invalidation
+const WORKSPACES_QUERY_KEY = ["workspaces"];
 
 export function useWorkspaces() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    setWorkspaces(read());
-    const sync = () => setWorkspaces(read());
-    window.addEventListener("arc:workspaces", sync);
-    window.addEventListener("storage", sync);
-    return () => {
-      window.removeEventListener("arc:workspaces", sync);
-      window.removeEventListener("storage", sync);
-    };
-  }, []);
+  // Fetch workspaces query
+  const { data: workspaces = [] } = useQuery<Workspace[]>({
+    queryKey: WORKSPACES_QUERY_KEY,
+    queryFn: async () => {
+      const data = await apiFetch<BackendWorkspace[]>("/workspaces");
+      return data.map(mapWorkspace);
+    },
+  });
 
-  const create = useCallback((name: string, paperIds: string[] = []): Workspace => {
-    const ws: Workspace = {
-      id: crypto.randomUUID().slice(0, 8),
-      name: name.trim() || "Untitled workspace",
-      paperIds: [...new Set(paperIds)],
-      createdAt: Date.now(),
-    };
-    write([ws, ...read()]);
-    return ws;
-  }, []);
+  // Create workspace mutation
+  const createMutation = useMutation({
+    mutationFn: (variables: { name: string; paperIds?: string[] }) =>
+      apiFetch<BackendWorkspace>("/workspaces", {
+        method: "POST",
+        body: JSON.stringify({
+          name: variables.name,
+          paper_ids: variables.paperIds || [],
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    },
+  });
 
-  const rename = useCallback((id: string, name: string) => {
-    write(read().map((w) => (w.id === id ? { ...w, name } : w)));
-  }, []);
+  // Rename workspace mutation
+  const renameMutation = useMutation({
+    mutationFn: (variables: { id: string; name: string }) =>
+      apiFetch<BackendWorkspace>(`/workspaces/${variables.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: variables.name }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    },
+  });
 
-  const remove = useCallback((id: string) => {
-    write(read().filter((w) => w.id !== id));
-  }, []);
+  // Remove workspace mutation
+  const removeMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch<void>(`/workspaces/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    },
+  });
 
-  const addPapers = useCallback((id: string, ids: string[]) => {
-    write(
-      read().map((w) =>
-        w.id === id ? { ...w, paperIds: [...new Set([...w.paperIds, ...ids])] } : w,
-      ),
-    );
-  }, []);
+  // Add papers mutation
+  const addPapersMutation = useMutation({
+    mutationFn: (variables: { id: string; paperIds: string[] }) =>
+      apiFetch<BackendWorkspace>(`/workspaces/${variables.id}/papers`, {
+        method: "POST",
+        body: JSON.stringify({ paper_ids: variables.paperIds }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    },
+  });
 
-  const removePaper = useCallback((id: string, paperId: string) => {
-    write(
-      read().map((w) =>
-        w.id === id ? { ...w, paperIds: w.paperIds.filter((p) => p !== paperId) } : w,
-      ),
-    );
-  }, []);
+  // Remove paper mutation
+  const removePaperMutation = useMutation({
+    mutationFn: (variables: { id: string; paperId: string }) =>
+      apiFetch<BackendWorkspace>(`/workspaces/${variables.id}/papers/${variables.paperId}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
+    },
+  });
 
-  return { workspaces, create, rename, remove, addPapers, removePaper };
+  const create = async (name: string, paperIds: string[] = []): Promise<Workspace> => {
+    const res = await createMutation.mutateAsync({ name, paperIds });
+    return mapWorkspace(res);
+  };
+
+  const rename = async (id: string, name: string): Promise<Workspace> => {
+    const res = await renameMutation.mutateAsync({ id, name });
+    return mapWorkspace(res);
+  };
+
+  const remove = async (id: string): Promise<void> => {
+    return removeMutation.mutateAsync(id);
+  };
+
+  const addPapers = async (id: string, paperIds: string[]): Promise<Workspace> => {
+    const res = await addPapersMutation.mutateAsync({ id, paperIds });
+    return mapWorkspace(res);
+  };
+
+  const removePaper = async (id: string, paperId: string): Promise<Workspace> => {
+    const res = await removePaperMutation.mutateAsync({ id, paperId });
+    return mapWorkspace(res);
+  };
+
+  return {
+    workspaces,
+    create,
+    rename,
+    remove,
+    addPapers,
+    removePaper,
+  };
 }
 
 export function getWorkspace(id: string): Workspace | undefined {
-  return read().find((w) => w.id === id);
+  return undefined;
 }

@@ -109,9 +109,10 @@ function SearchPage() {
         method: "POST",
         body: JSON.stringify({ query: q }),
       });
-      const mapped = data.map((p) => ({
+      const mapped = data.map((p: any) => ({
         ...p,
         score: p.relevance ?? 0.0,
+        pdfUrl: p.pdf_url,
       }));
       setPapers(mapped);
       cachePapers(mapped);

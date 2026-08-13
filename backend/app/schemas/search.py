@@ -23,6 +23,7 @@ class PaperSchema(BaseModel):
     summary: SummarySchema = Field(default_factory=SummarySchema)
     gaps: list[str] = Field(default_factory=list)
     future: list[str] = Field(default_factory=list)
+    pdf_url: str | None = None
 
 class SearchRequest(BaseModel):
     query: str

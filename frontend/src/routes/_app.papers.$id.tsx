@@ -3,9 +3,11 @@ import { ArrowLeft, Bookmark, ExternalLink, ArrowRight } from "lucide-react";
 import { MOCK_PAPERS } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
 
+import { getCachedPapers } from "@/lib/paper-cache";
+
 export const Route = createFileRoute("/_app/papers/$id")({
   loader: ({ params }) => {
-    const paper = MOCK_PAPERS.find((p) => p.id === params.id);
+    const paper = getCachedPapers([params.id])[0];
     if (!paper) throw notFound();
     return { paper };
   },
@@ -64,7 +66,13 @@ function PaperPage() {
               <Button size="sm">Add to review <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button>
             </Link>
             <Button size="sm" variant="outline"><Bookmark className="mr-1 h-3.5 w-3.5" /> Save</Button>
-            <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF</Button>
+            {paper.pdfUrl ? (
+              <a href={paper.pdfUrl} target="_blank" rel="noopener noreferrer">
+                <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF</Button>
+              </a>
+            ) : (
+              <Button size="sm" variant="outline" disabled title="No PDF available"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF</Button>
+            )}
           </div>
         </div>
 

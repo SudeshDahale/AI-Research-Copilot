@@ -20,6 +20,7 @@ export type Paper = {
   };
   gaps: string[];
   future: string[];
+  pdfUrl?: string;
 };
 
 const BASE: Paper[] = [

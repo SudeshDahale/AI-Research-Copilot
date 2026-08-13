@@ -102,6 +102,12 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
             if term:
                 tags.append(term)
 
+        # 8. PDF URL
+        pdf_url = ""
+        if id_val.startswith("arx-"):
+            raw_id = id_val.replace("arx-", "").replace("-", ".")
+            pdf_url = f"https://arxiv.org/pdf/{raw_id}.pdf"
+
         papers.append({
             "id": id_val,
             "title": title,
@@ -123,7 +129,8 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
                 "limitations": ""
             },
             "gaps": [],
-            "future": []
+            "future": [],
+            "pdf_url": pdf_url
         })
 
     return papers
@@ -134,7 +141,7 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
     params = {
         "query": query,
         "limit": limit,
-        "fields": "title,authors,venue,year,citationCount,abstract,externalIds"
+        "fields": "title,authors,venue,year,citationCount,abstract,externalIds,openAccessPdf"
     }
 
     try:
@@ -175,6 +182,9 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
             if author.get("name"):
                 authors.append(author["name"].strip())
 
+        open_access = item.get("openAccessPdf") or {}
+        pdf_url = open_access.get("url") or ""
+
         papers.append({
             "id": id_val,
             "title": title,
@@ -196,7 +206,8 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
                 "limitations": ""
             },
             "gaps": [],
-            "future": []
+            "future": [],
+            "pdf_url": pdf_url
         })
 
     return papers
@@ -259,6 +270,7 @@ def merge_papers(p1: dict, p2: dict) -> dict:
     }
     merged["gaps"] = p1.get("gaps") or p2.get("gaps") or []
     merged["future"] = p1.get("future") or p2.get("future") or []
+    merged["pdf_url"] = p1.get("pdf_url") or p2.get("pdf_url") or ""
     
     return merged
 

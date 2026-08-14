@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.workspace import Workspace, WorkspacePaper
 from app.schemas.workspace import WorkspaceCreate
+from app.services.paper_db_service import upsert_paper
 
 
 async def get_workspace(
@@ -84,9 +85,19 @@ async def delete_workspace(
 
 
 async def add_papers_to_workspace(
-    db: AsyncSession, workspace_id: uuid.UUID, paper_ids: list[str], user_id: uuid.UUID
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    paper_ids: list[str],
+    user_id: uuid.UUID,
+    papers_data: list[dict] | None = None,
 ) -> Workspace | None:
-    """Add multiple paper IDs to a workspace, ignoring duplicates."""
+    """Add multiple paper IDs to a workspace, ignoring duplicates.
+
+    If *papers_data* is provided (a list of paper dicts from the search
+    results), each paper is upserted into the durable `papers` table before
+    the workspace link is created.  This is what makes saved papers survive
+    beyond the ephemeral Redis search cache (Sprint 4).
+    """
     workspace = await get_workspace(db, workspace_id, user_id)
     if not workspace:
         return None
@@ -94,7 +105,18 @@ async def add_papers_to_workspace(
     existing_papers = {wp.paper_id for wp in workspace.workspace_papers}
     new_papers = set(paper_ids) - existing_papers
 
+    # Build a lookup of paper_id -> metadata dict for the upsert
+    data_by_id: dict[str, dict] = {}
+    if papers_data:
+        for pd in papers_data:
+            pid = pd.get("id", "")
+            if pid:
+                data_by_id[pid] = pd
+
     for paper_id in new_papers:
+        # Persist paper metadata if provided
+        if paper_id in data_by_id:
+            await upsert_paper(db, data_by_id[paper_id])
         db.add(WorkspacePaper(workspace_id=workspace_id, paper_id=paper_id))
 
     await db.commit()

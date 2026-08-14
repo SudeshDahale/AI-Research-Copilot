@@ -112,6 +112,7 @@ Right now **none of that is real** — `MOCK_PAPERS` is hardcoded, `lib/workspac
 
 **You'll learn:** Structured LLM output (again — you'll get much faster at this the second time), and running LLM calls as background work instead of blocking a request.
 
+
 **Build:**
 - `app/services/llm_service.py` — thin client wrapper + a `generate_structured()` helper (tool-calling / JSON schema, not "please respond in JSON")
 - A new route (add `app/api/v1/papers.py` — the skeleton doesn't have one yet, and that's fine, real projects grow past their initial file list) — `POST /papers/{id}/analyze`, given the paper's abstract (+ metadata), returns the `objective/methodology/dataset/results/limitations` summary plus `gaps` and `future` arrays, matching the shape already in `mock-data.ts`'s `Paper.summary`

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     # --- LLM (wired up in Sprint 5) ---
     llm_api_key: str = ""
+    llm_model: str = "claude-sonnet-4-5-20250929"
 
     # --- CORS ---
     cors_origins: str = "http://localhost:5173,http://localhost:8080"

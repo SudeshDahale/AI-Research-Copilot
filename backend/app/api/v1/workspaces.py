@@ -83,9 +83,18 @@ async def add_papers_to_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> WorkspaceOut:
-    """Add paper IDs to a workspace owned by the current user."""
+    """Add paper IDs to a workspace owned by the current user.
+
+    If *papers_data* is included in the request body, each paper's metadata is
+    upserted into the durable `papers` table so it can be retrieved via
+    GET /papers/{id} even after the Redis search cache expires.
+    """
     workspace = await workspace_service.add_papers_to_workspace(
-        db, workspace_id=id, paper_ids=payload.paper_ids, user_id=current_user.id
+        db,
+        workspace_id=id,
+        paper_ids=payload.paper_ids,
+        user_id=current_user.id,
+        papers_data=payload.papers_data or None,
     )
     if not workspace:
         raise HTTPException(

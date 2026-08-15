@@ -34,6 +34,11 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "claude-sonnet-4-5-20250929"
 
+    # --- Embeddings (Sprint 6) ---
+    voyage_api_key: str = ""
+    embedding_model: str = "voyage-3.5-lite"
+    embedding_dim: int = 512
+
     # --- CORS ---
     cors_origins: str = "http://localhost:5173,http://localhost:8080"
 

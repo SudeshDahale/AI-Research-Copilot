@@ -15,6 +15,9 @@ dependencies = [
     "pyjwt>=2.9.0",
     "email-validator>=2.2.0",
     "python-multipart>=0.0.12",
+    "pgvector>=0.3.6",
+    "voyageai>=0.3.2",
+    "numpy>=1.26.0",
 ]
 
 [project.optional-dependencies]

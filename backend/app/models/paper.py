@@ -17,6 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
 
+from pgvector.sqlalchemy import Vector
+
+EMBEDDING_DIM = 512  # must match Settings.embedding_dim and the Alembic migration below
 
 class Paper(Base):
     """A research paper that has been saved to at least one workspace."""
@@ -42,6 +45,11 @@ class Paper(Base):
         Text, nullable=False, default="[]",
         comment="JSON-encoded list of tag strings"
     )
+
+    # Sprint 6 — semantic embedding of the abstract. NULL until the paper
+    # has gone through vector_service.embed_paper(). Powers "similar papers"
+    # and the semantic term in ranking_service's blend.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
 
     # Timestamps
     first_saved_at: Mapped[datetime] = mapped_column(

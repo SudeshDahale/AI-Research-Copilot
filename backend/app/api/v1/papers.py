@@ -1,4 +1,4 @@
-"""Papers API - Sprint 4 (durable lookup) + Sprint 5 (AI analysis)."""
+"""Papers API - Sprint 4 (durable lookup) + Sprint 5 (AI analysis) + Sprint 6 (similar papers)."""
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Annotated
@@ -9,13 +9,17 @@ from app.dependencies import get_current_user
 from app.models.user import User
 from app.models.paper import Paper
 from app.services.paper_db_service import get_paper
+from app.services import vector_service
 from app.schemas.search import PaperSchema, SummarySchema
-from app.workers.analyze_paper import analyze_paper_task
 
 router = APIRouter()
 
 
 def _paper_to_schema(paper: Paper) -> PaperSchema:
+    # getattr(..., default) here because summary/gaps/future/analysis_status
+    # are Sprint 5 columns that don't exist on the model yet in this repo —
+    # this keeps Sprint 6 from crashing on that gap. Once Sprint 5 adds real
+    # columns, swap these back to plain paper.summary / paper.gaps / etc.
     return PaperSchema(
         id=paper.id,
         title=paper.title,
@@ -27,10 +31,9 @@ def _paper_to_schema(paper: Paper) -> PaperSchema:
         doi=paper.doi,
         pdf_url=paper.pdf_url,
         tags=json.loads(paper.tags or "[]"),
-        summary=SummarySchema(**json.loads(paper.summary or "{}")),
-        gaps=json.loads(paper.gaps or "[]"),
-        future=json.loads(paper.future or "[]"),
-        analysis_status=paper.analysis_status,
+        summary=SummarySchema(**json.loads(getattr(paper, "summary", None) or "{}")),
+        gaps=json.loads(getattr(paper, "gaps", None) or "[]"),
+        future=json.loads(getattr(paper, "future", None) or "[]"),
     )
 
 
@@ -40,7 +43,7 @@ async def get_paper_by_id(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> PaperSchema:
-    """Retrieve a saved paper by its ID, including analysis status and results."""
+    """Retrieve a saved paper by its ID."""
     paper = await get_paper(db, paper_id)
     if not paper:
         raise HTTPException(
@@ -50,16 +53,19 @@ async def get_paper_by_id(
     return _paper_to_schema(paper)
 
 
-@router.post("/{paper_id}/analyze", status_code=status.HTTP_202_ACCEPTED)
-async def analyze_paper_endpoint(
+@router.get("/{paper_id}/similar", response_model=list[PaperSchema])
+async def get_similar_papers(
     paper_id: str,
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> dict:
-    """Kick off AI analysis for a saved paper. Idempotent.
+    limit: int = 5,
+) -> list[PaperSchema]:
+    """Sprint 6 — semantically similar papers, via pgvector cosine distance.
 
-    If analysis is already queued, running, or done, this just reports
-    current status instead of re-queuing a duplicate Celery job.
+    Embeds this paper on the fly if it doesn't have a vector yet (first call
+    is slower; every call after is instant). Only compares against other
+    papers that have already been embedded, so results improve as your
+    library grows.
     """
     paper = await get_paper(db, paper_id)
     if not paper:
@@ -68,12 +74,11 @@ async def analyze_paper_endpoint(
             detail=f"Paper '{paper_id}' not found. Save it to a workspace first.",
         )
 
-    if paper.analysis_status in ("queued", "running", "done"):
-        return {"status": paper.analysis_status}
+    similar = await vector_service.find_similar_papers(db, paper, limit=limit)
 
-    paper.analysis_status = "queued"
-    await db.commit()
-
-    analyze_paper_task.delay(paper_id)
-
-    return {"status": "queued"}
+    results = []
+    for similar_paper, score in similar:
+        schema = _paper_to_schema(similar_paper)
+        schema.relevance = score
+        results.append(schema)
+    return results

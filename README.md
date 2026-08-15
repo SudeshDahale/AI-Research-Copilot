@@ -2,38 +2,41 @@
 
 ![Arclight Banner](assets/cover.png)
 
-An AI-powered research copilot for discovering, curating, and analyzing scientific papers.
+An AI-powered research copilot for discovering, curating, and analyzing scientific papers with vector similarity search.
 
 ---
 
 ## Overview
 
-**Arclight** is a full-stack research assistant that lets you search millions of scientific papers from arXiv and Semantic Scholar, organize them into workspaces, and run a scoped research agent across your curated collections.
+**Arclight** is a full-stack research assistant that lets you search millions of scientific papers from arXiv and Semantic Scholar, organize them into workspaces, run vector-based similarity searches via `pgvector`, and leverage a scoped research agent across your curated collections.
 
 ---
 
-## Current Features
+## Current Features (Through Sprint 6)
 
-### Paper Discovery
-- Full-text search powered by live calls to **arXiv** and **Semantic Scholar** APIs.
-- Results are **normalized**, **deduplicated** (by DOI, arXiv ID, or fuzzy title match), and **ranked** by lexical similarity to the query.
-- Filter results by year range, minimum citation count, venue, and topic tags.
-- Papers with open-access PDFs expose a direct `pdf_url`; the paper detail page renders a working **Open PDF** button that opens the source PDF in a new tab.
+### 1. Paper Discovery & Search
+- Full-text search querying live **arXiv** and **Semantic Scholar** APIs.
+- Results are **normalized**, **deduplicated** (by DOI, arXiv ID, or fuzzy title match), and **ranked** by lexical query relevance.
+- Filter results by year range, citation count, venue, and topic tags.
+- Open-access PDF links (`pdf_url`) allow directly opening original papers in a new tab.
 
-### Authentication
-- JWT-based register and login backed by PostgreSQL.
-- Passwords hashed with bcrypt; tokens expire after 24 hours.
+### 2. Redis Caching & Durable Persistence (Sprint 4)
+- **Fast Search Caching**: Redis-backed caching with automatic TTL (`cache.py`) avoids redundant external API queries for repeated searches.
+- **Two-Tier Lifetime**: Search results remain fast and ephemeral in Redis, while papers saved to workspaces are durably upserted into PostgreSQL (`papers` table).
+- Durable paper lookup endpoint: `GET /api/v1/papers/{id}`.
 
-### Workspaces
-- Create named workspaces and link any discovered papers to them.
-- Add or remove individual papers; rename or delete workspaces.
-- Workspace membership is persisted in PostgreSQL — data survives page refreshes.
-- Per-workspace scoped agent chat for focused analysis (literature review, gap finding, methodology comparison).
+### 3. AI Paper Analysis Schemas (Sprint 5)
+- Dedicated database columns for structured AI summaries (`objective`, `methodology`, `dataset`, `results`, `limitations`), `gaps`, and `future` work.
 
-### Research Agent Chat
-- Conversational agent available on the Discover page (general scope) and within each Workspace (paper-scoped).
-- Generates structured responses: literature reviews, research gaps, methodology comparisons, summaries.
-- Agent can create a workspace from the current search results on request.
+### 4. Vector Embeddings & `pgvector` Semantic Similarity (Sprint 6)
+- **Voyage AI Embeddings**: Generates 512-dimensional vector embeddings using the `voyage-3.5-lite` scientific model.
+- **PostgreSQL `pgvector`**: High-performance nearest-neighbor cosine similarity search using HNSW indexing (`vector_cosine_ops`).
+- **Find Similar Papers**: `GET /api/v1/papers/{id}/similar` returns topically related papers based on deep semantic meaning.
+
+### 5. Authentication & Workspaces (Sprints 1 & 2)
+- JWT authentication with secure bcrypt password hashing.
+- Workspace CRUD operations with PostgreSQL persistence.
+- Per-workspace paper curation and scoped agent reasoning.
 
 ---
 
@@ -43,7 +46,8 @@ An AI-powered research copilot for discovering, curating, and analyzing scientif
 | :--- | :--- |
 | **Frontend** | React 19 · TypeScript 5.8 · Vite 8 · TanStack Router · TanStack Query |
 | **Backend** | FastAPI · SQLAlchemy 2.0 (Async) · Pydantic Settings · Alembic |
-| **Database** | PostgreSQL 15+ |
+| **Database & Vectors** | PostgreSQL 15+ · `pgvector` (HNSW indexing) |
+| **Embeddings** | Voyage AI (`voyage-3.5-lite`, 512-dim) |
 | **Cache / Broker** | Redis |
 | **External APIs** | arXiv Atom Feed · Semantic Scholar Graph API |
 
@@ -54,21 +58,13 @@ An AI-powered research copilot for discovering, curating, and analyzing scientif
 ### Prerequisites
 - **Python 3.11 or 3.12**
 - **Node.js 18+** and npm
-- **PostgreSQL** running locally with a database named `arclight`
-- **Redis** (e.g. running via WSL: `sudo service redis-server start`)
+- **PostgreSQL** running locally with database `arclight` and the `vector` extension enabled
+- **Redis** running locally (or via WSL: `redis-server`)
 
 ---
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/SudeshDahale/AI-Research-Copilot.git
-cd AI-Research-Copilot
-```
-
----
-
-### 2. Configure the Backend Environment
-Create `backend/.env` by copying the example and filling in your values:
+### 1. Configure the Backend Environment
+Create or update `backend/.env`:
 
 ```env
 # --- App ---
@@ -77,8 +73,7 @@ ENVIRONMENT=development
 DEBUG=true
 
 # --- Database ---
-# Replace <user> and <password> with your local PostgreSQL credentials
-DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/arclight
+DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/arclight
 
 # --- Redis ---
 REDIS_URL=redis://localhost:6379/0
@@ -88,55 +83,54 @@ JWT_SECRET=change-me-to-a-long-random-secret
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=1440
 
-# --- LLM (not yet wired up) ---
+# --- LLM (Sprint 5/7) ---
 LLM_API_KEY=
-```
 
-> **Never commit real passwords or secrets to version control.**
+# --- Embeddings (Sprint 6) ---
+VOYAGE_API_KEY=your-voyage-api-key
+EMBEDDING_MODEL=voyage-3.5-lite
+EMBEDDING_DIM=512
+
+# --- CORS ---
+CORS_ORIGINS=http://localhost:5173,http://localhost:8080
+```
 
 ---
 
-### 3. Set Up the Backend
+### 2. Set Up and Start the Backend
 ```bash
 cd backend
 
-# Create and activate the virtual environment
+# Create and activate virtual environment
 python -m venv venv
+venv\Scripts\activate      # Windows
+# source venv/bin/activate # Mac/Linux
 
-# Windows
-venv\Scripts\activate
-# Mac / Linux
-source venv/bin/activate
-
-# Install dependencies
+# Install dependencies (including pgvector and voyageai)
 pip install -e .
+pip install pgvector voyageai
 
 # Run database migrations
 alembic upgrade head
-```
 
----
-
-### 4. Start the Backend
-```bash
-# From the backend/ directory with the virtual environment active
+# Start FastAPI server
 python -m uvicorn app.main:app --port 8001 --reload
 ```
 
 - **API base**: `http://localhost:8001/api/v1`
-- **Interactive docs**: `http://localhost:8001/docs`
+- **Interactive OpenAPI Documentation**: `http://localhost:8001/docs`
 - **Health check**: `http://localhost:8001/api/v1/healthz`
 
 ---
 
-### 5. Set Up and Start the Frontend
+### 3. Set Up and Start the Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-- **App**: `http://localhost:8080` (Vite will pick the next available port if 8080 is busy)
+- **Frontend Application**: `http://localhost:8080` (or `http://localhost:8081`)
 
 ---
 
@@ -148,47 +142,51 @@ AI-Research-Copilot/
 │   ├── app/
 │   │   ├── api/v1/
 │   │   │   ├── auth.py             # JWT register & login
-│   │   │   ├── search.py           # Multi-source paper search endpoint
-│   │   │   ├── workspaces.py       # Workspaces CRUD
+│   │   │   ├── search.py           # Cached multi-source paper search
+│   │   │   ├── workspaces.py       # Workspaces CRUD & paper linking
+│   │   │   ├── papers.py           # Durable paper lookup & pgvector similarity
 │   │   │   └── router.py           # Main API router & healthcheck
 │   │   ├── core/
+│   │   │   ├── cache.py            # Redis async client & search cache helpers
 │   │   │   ├── config.py           # Pydantic-settings configuration
-│   │   │   ├── logging.py          # Structured logging
-│   │   │   └── security.py         # Password hashing & JWT
+│   │   │   ├── logging.py          # Structured stream logs
+│   │   │   └── security.py         # Password hashing & JWT decode
 │   │   ├── db/
-│   │   │   └── session.py          # Async SQLAlchemy engine & get_db
+│   │   │   └── session.py          # Async SQLAlchemy engine & session dependency
 │   │   ├── models/
-│   │   │   ├── user.py
-│   │   │   └── workspace.py
+│   │   │   ├── user.py             # User accounts
+│   │   │   ├── workspace.py        # Workspaces & WorkspacePapers
+│   │   │   └── paper.py            # Durable Paper model with pgvector Vector(512)
 │   │   ├── schemas/
-│   │   │   ├── search.py           # PaperSchema (includes pdf_url)
-│   │   │   └── workspace.py
+│   │   │   ├── search.py           # Paper & Search schemas
+│   │   │   └── workspace.py        # Workspace schemas
 │   │   ├── services/
 │   │   │   ├── paper_service.py    # arXiv & Semantic Scholar fetch, merge, dedup
+│   │   │   ├── paper_db_service.py # PostgreSQL paper upsert and retrieval
 │   │   │   ├── ranking_service.py  # Lexical relevance scoring
+│   │   │   ├── vector_service.py   # Voyage AI embedding & pgvector similarity search
 │   │   │   └── workspace_service.py
-│   │   ├── migrations/             # Alembic migration scripts
+│   │   ├── migrations/             # Alembic migration versions
 │   │   └── main.py
 │   ├── alembic.ini
 │   └── pyproject.toml
 ├── frontend/
 │   ├── src/
-│   │   ├── components/             # Shared UI components
+│   │   ├── components/             # UI Components
 │   │   ├── routes/
-│   │   │   ├── index.tsx           # Login / register
-│   │   │   ├── _app.tsx            # App shell & navigation
-│   │   │   ├── _app.search.tsx     # Discover — live paper search
-│   │   │   ├── _app.workflow.index.tsx  # Workspaces list
-│   │   │   ├── _app.workflow.$id.tsx    # Workspace detail & agent chat
-│   │   │   ├── _app.papers.$id.tsx      # Paper detail with Open PDF
+│   │   │   ├── index.tsx           # Auth login/register
+│   │   │   ├── _app.tsx            # Navigation & AppShell layout
+│   │   │   ├── _app.search.tsx     # Discover — real paper search
+│   │   │   ├── _app.workflow.index.tsx  # Workspaces dashboard
+│   │   │   ├── _app.workflow.$id.tsx    # Workspace view & Agent chat
+│   │   │   ├── _app.papers.$id.tsx      # Paper details & Open PDF
 │   │   │   ├── _app.library.tsx    # Saved library
 │   │   │   └── _app.review.tsx     # Literature review editor
 │   │   └── lib/
-│   │       ├── workspaces.ts       # TanStack Query workspace hooks
-│   │       ├── paper-cache.ts      # Session paper cache (localStorage)
-│   │       ├── agent.ts
-│   │       └── mock-data.ts        # Paper type definitions & seed data
-│   ├── vite.config.ts              # Dev proxy: /api → localhost:8001
+│   │       ├── workspaces.ts       # TanStack Query hooks
+│   │       ├── paper-cache.ts      # Local paper cache
+│   │       └── mock-data.ts
+│   ├── vite.config.ts
 │   └── package.json
 ├── Arclight-Implementation-Plan.md
 └── README.md
@@ -196,22 +194,24 @@ AI-Research-Copilot/
 
 ---
 
-## API Endpoints
+## API Documentation
 
 All endpoints are prefixed with `/api/v1`.
 
 | Tag | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
-| **health** | `GET` | `/healthz` | Liveness check — returns `{"status": "ok"}` |
-| **auth** | `POST` | `/auth/register` | Create a new account |
-| **auth** | `POST` | `/auth/login` | Obtain a JWT access token |
-| **search** | `POST` | `/search` | Search arXiv + Semantic Scholar; returns ranked papers with `pdf_url` |
-| **workspaces** | `GET` | `/workspaces` | List all workspaces for the current user |
-| **workspaces** | `POST` | `/workspaces` | Create a workspace |
+| **health** | `GET` | `/healthz` | Liveness verification (`{"status": "ok"}`) |
+| **auth** | `POST` | `/auth/register` | Create a new user account |
+| **auth** | `POST` | `/auth/login` | Obtain JWT access token |
+| **search** | `POST` | `/search` | Redis-cached arXiv + Semantic Scholar search |
+| **workspaces** | `GET` | `/workspaces` | List current user's workspaces |
+| **workspaces** | `POST` | `/workspaces` | Create a new workspace |
 | **workspaces** | `PUT` | `/workspaces/{id}` | Rename a workspace |
 | **workspaces** | `DELETE` | `/workspaces/{id}` | Delete a workspace |
-| **workspaces** | `POST` | `/workspaces/{id}/papers` | Add papers to a workspace |
-| **workspaces** | `DELETE` | `/workspaces/{id}/papers/{paper_id}` | Remove a paper from a workspace |
+| **workspaces** | `POST` | `/workspaces/{id}/papers` | Save papers to workspace & persist to DB |
+| **workspaces** | `DELETE` | `/workspaces/{id}/papers/{paper_id}` | Remove paper from workspace |
+| **papers** | `GET` | `/papers/{id}` | Fetch a saved durable paper by ID |
+| **papers** | `GET` | `/papers/{id}/similar` | Find semantically similar papers using `pgvector` |
 
 ---
 
@@ -221,9 +221,9 @@ All endpoints are prefixed with `/api/v1`.
 - [x] **Sprint 1: Auth** — JWT register/login, bcrypt password hashing, protected routes
 - [x] **Sprint 2: Workspaces** — PostgreSQL-backed workspace CRUD, paper linking, TanStack Query integration
 - [x] **Sprint 3: Real Paper Search** — Live arXiv & Semantic Scholar search, normalization, deduplication, relevance ranking, open-access `pdf_url`
-- [ ] **Sprint 4: Redis Caching & Search Optimizations** (Planned)
-- [ ] **Sprint 5: LLM Paper Analysis** (Planned)
-- [ ] **Sprint 6: pgvector Integration & Semantic Search** (Planned)
+- [x] **Sprint 4: Redis Caching & Search Optimizations** — Redis search caching, durable `Paper` table & upsert
+- [x] **Sprint 5: AI Paper Analysis Schema** — Database columns and models for structured AI analysis
+- [x] **Sprint 6: pgvector Integration & Semantic Search** — Voyage AI embeddings (512-dim), `pgvector` HNSW indexing, and cosine similarity endpoint
 - [ ] **Sprint 7: LangGraph Research Agent** (Planned)
 - [ ] **Sprint 8: Automated Document Generation** (Planned)
 

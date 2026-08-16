@@ -78,8 +78,8 @@ function LibraryPage() {
   const createWorkspaceFromSelection = () => {
     if (selected.size === 0) return;
     const name = prompt("Name this workspace:", `Library selection · ${new Date().toLocaleDateString()}`);
-    if (!name) return;
-    create(name, [...selected]);
+    const selectedPapers = filtered.filter((p) => selected.has(p.id));
+    create(name, [...selected], selectedPapers);
     setSelected(new Set());
     alert(`Workspace "${name}" created with ${selected.size} papers. Open it from Workflow.`);
   };

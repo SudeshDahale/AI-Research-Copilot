@@ -11,25 +11,32 @@ export function AgentSteps({
   onDone,
   collapsedSummary = false,
   size = "sm",
+  liveIndex,
 }: {
   steps: PlanStep[];
   onDone?: () => void;
   collapsedSummary?: boolean;
   size?: "sm" | "lg";
+  /** Sprint 7: when provided, progress is driven by real backend events
+   *  instead of the internal per-step timer. The parent increments this
+   *  as each SSE "step" event arrives. */
+  liveIndex?: number;
 }) {
-  const [idx, setIdx] = useState(collapsedSummary ? steps.length : 0);
+  const live = liveIndex !== undefined;
+  const [internalIdx, setInternalIdx] = useState(collapsedSummary ? steps.length : 0);
+  const idx = live ? liveIndex : internalIdx;
   const [open, setOpen] = useState(!collapsedSummary);
 
   useEffect(() => {
-    if (collapsedSummary) return;
-    if (idx >= steps.length) {
+    if (collapsedSummary || live) return;
+    if (internalIdx >= steps.length) {
       const t = setTimeout(() => onDone?.(), 250);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setIdx((i) => i + 1), steps[idx].ms);
+    const t = setTimeout(() => setInternalIdx((i) => i + 1), steps[internalIdx].ms);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idx, steps, collapsedSummary]);
+  }, [internalIdx, steps, collapsedSummary, live]);
 
   const done = idx >= steps.length;
   const lg = size === "lg";

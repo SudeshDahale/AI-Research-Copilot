@@ -228,7 +228,7 @@ function WorkspaceDetail() {
                       </div>
                     </div>
                     <button
-                      onClick={() => addPapers(ws.id, [p.id])}
+                      onClick={() => addPapers(ws.id, [p.id], [p])}
                       className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-xs hover:border-accent hover:text-accent"
                     >
                       Add

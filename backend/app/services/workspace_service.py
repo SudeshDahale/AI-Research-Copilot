@@ -47,8 +47,18 @@ async def create_workspace(
     await db.flush()  # Generate db_obj.id
 
     if obj_in.paper_ids:
-        # Add initial papers
+        # Build lookup for metadata if provided
+        data_by_id: dict[str, dict] = {}
+        if getattr(obj_in, "papers_data", None):
+            for pd in obj_in.papers_data:
+                pid = pd.get("id", "")
+                if pid:
+                    data_by_id[pid] = pd
+
+        # Add initial papers and upsert metadata
         for paper_id in set(obj_in.paper_ids):
+            if paper_id in data_by_id:
+                await upsert_paper(db, data_by_id[paper_id])
             db.add(WorkspacePaper(workspace_id=db_obj.id, paper_id=paper_id))
 
     await db.commit()

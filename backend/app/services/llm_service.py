@@ -83,3 +83,26 @@ async def analyze_paper_abstract(title: str, abstract: str) -> dict[str, Any] | 
         return json.loads(raw_response)
     except json.JSONDecodeError:
         return None
+
+async def generate_structured_json(
+    system: str, prompt: str, schema_hint: str
+) -> dict[str, Any] | None:
+    """Generic structured-output helper for Sprint 7's agent nodes.
+
+    Groq's JSON mode (response_format={"type": "json_object"}) guarantees
+    valid JSON but doesn't accept a schema like tool-calling APIs do, so the
+    shape has to be spelled out in the prompt itself. schema_hint is that
+    spelled-out shape, appended to the system prompt.
+    """
+    messages = [
+        {"role": "system", "content": f"{system}\n\nReturn a valid JSON object with this shape:\n{schema_hint}"},
+        {"role": "user", "content": prompt},
+    ]
+    raw = await generate_chat_completion(messages=messages, response_format={"type": "json_object"})
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        logger.error(f"generate_structured_json: model did not return valid JSON: {raw[:200]!r}")
+        return None    

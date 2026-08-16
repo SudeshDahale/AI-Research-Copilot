@@ -108,3 +108,39 @@ export function buildDocument(
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** Sprint 7 — step labels for the real LangGraph agent. Order matches the
+ *  actual node sequence in backend/app/agents/graph.py, so liveIndex from
+ *  SSE "step" events lines up with what's shown here. */
+export function gapAgentSteps(n: number): PlanStep[] {
+  return [
+    { label: "Reading papers in scope", detail: `${n} papers`, ms: 0 },
+    { label: "Scoring relevance", detail: "Ranking against your question", ms: 0 },
+    { label: "Clustering findings", detail: "Grouping by theme", ms: 0 },
+    { label: "Synthesizing summary", detail: "Reading across the corpus", ms: 0 },
+    { label: "Identifying research gaps", detail: "Grounded in what's actually missing", ms: 0 },
+    { label: "Finalizing response", detail: "Composing the report", ms: 0 },
+  ];
+}
+
+export function litReviewAgentSteps(n: number): PlanStep[] {
+  return [
+    { label: "Reading papers in scope", detail: `${n} papers`, ms: 0 },
+    { label: "Scoring relevance", detail: "Ranking against your question", ms: 0 },
+    { label: "Clustering findings", detail: "Grouping by theme", ms: 0 },
+    { label: "Synthesizing summary", detail: "Reading across the corpus", ms: 0 },
+    { label: "Identifying research gaps", detail: "Grounded in what's actually missing", ms: 0 },
+    { label: "Drafting narrative", detail: "Writing the literature review", ms: 0 },
+    { label: "Finalizing response", detail: "Composing the report", ms: 0 },
+  ];
+}
+
+export function genericAgentSteps(n: number): PlanStep[] {
+  return [
+    { label: "Reading papers in scope", detail: `${n} papers`, ms: 0 },
+    { label: "Scoring relevance", detail: "Ranking against your question", ms: 0 },
+    { label: "Clustering findings", detail: "Grouping by theme", ms: 0 },
+    { label: "Synthesizing summary", detail: "Reading across the corpus", ms: 0 },
+    { label: "Finalizing response", detail: "Composing the report", ms: 0 },
+  ];
+}

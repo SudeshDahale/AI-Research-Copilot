@@ -9,8 +9,17 @@ import { Input } from "@/components/ui/input";
 import { AgentChat } from "@/components/agent/AgentChat";
 import { DocumentList, DocumentViewer } from "@/components/DocumentPanel";
 import { buildAgentReply } from "@/lib/agent";
-import { answerSteps, buildDocument, documentSteps, type Artifact } from "@/lib/agent-plan";
+import {
+  answerSteps,
+  buildDocument,
+  documentSteps,
+  gapAgentSteps,
+  litReviewAgentSteps,
+  genericAgentSteps,
+  type Artifact,
+} from "@/lib/agent-plan";
 import { downloadText, slugify, stamp } from "@/lib/download";
+import { apiStream } from "@/lib/api";
 
 
 export const Route = createFileRoute("/_app/workflow/$id")({
@@ -43,49 +52,68 @@ function WorkspaceDetail() {
     [ws],
   );
 
-  const execute = (text: string, toolId: string | null) => {
-    const scope = `"${ws?.name ?? "workspace"}"`;
-    const wantsDoc = toolId === "doc" || /document|report|write.?up|draft/i.test(text);
+  const execute = (text: string, toolId: string | null, onProgress: (i: number) => void) => {
+    const wantsDoc = toolId === "doc";
+    const lower = text.toLowerCase();
 
-    if (wantsDoc) {
-      const kind = /review/i.test(text)
-        ? "Literature review"
-        : /summar/i.test(text)
-          ? "Summary"
-          : /outline/i.test(text)
-            ? "Outline"
-            : /brief/i.test(text)
-              ? "Brief"
-              : "Report";
-      return {
-        steps: documentSteps(kind, papers.length),
-        finish: () => {
-          const { title, content } = buildDocument(text, kind, papers, scope);
-          const doc = createDoc({
-            workspaceId: id,
-            title,
-            kind: kind as Doc["kind"],
-            prompt: text,
-            content,
-          });
-          const artifact: Artifact = {
-            type: "document",
-            id: doc.id,
-            title: doc.title,
-            kind: doc.kind,
-          };
-          return {
-            text: `I generated **${title}** — a ${kind.toLowerCase()} across ${papers.length} paper${papers.length === 1 ? "" : "s"} in this workspace (${doc.words.toLocaleString()} words).\n\nIt's saved to the **Documents** tab above, next to Papers in scope.`,
-            artifact,
-          };
-        },
-      };
-    }
+    // Pick the step list that matches the real graph path this question
+    // will take (mirrors detect_task() in backend/app/agents/graph.py).
+    const steps =
+      lower.includes("gap") || lower.includes("missing") || lower.includes("under")
+        ? gapAgentSteps(papers.length)
+        : lower.includes("literature review") || lower.includes("related work") || lower.includes("draft") || wantsDoc
+          ? litReviewAgentSteps(papers.length)
+          : genericAgentSteps(papers.length);
 
-    return {
-      steps: answerSteps(papers.length),
-      finish: () => ({ text: buildAgentReply(text, papers, scope) }),
-    };
+    let stepCount = 0;
+
+    const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
+      new Promise((resolve, reject) => {
+        let finalText = "";
+        apiStream("/agent/run", { query: text, workspace_id: id }, (event, data) => {
+          if (event === "step") {
+            stepCount = Math.min(stepCount + 1, steps.length - 1);
+            onProgress(stepCount);
+          } else if (event === "done") {
+            finalText = data.text ?? "";
+            onProgress(steps.length);
+          } else if (event === "error") {
+            reject(new Error(data.message ?? "Agent run failed"));
+          }
+        })
+          .then(() => {
+            if (!wantsDoc) {
+              resolve({ text: finalText });
+              return;
+            }
+            // Document mode: save the agent's real output as a workspace document.
+            const kind = /review/i.test(text)
+              ? "Literature review"
+              : /summar/i.test(text)
+                ? "Summary"
+                : /outline/i.test(text)
+                  ? "Outline"
+                  : /brief/i.test(text)
+                    ? "Brief"
+                    : "Report";
+            const title = text.replace(/^(generate|create|write|draft)\s+(a|an|the)?\s*/i, "").trim() || kind;
+            const doc = createDoc({
+              workspaceId: id,
+              title,
+              kind: kind as Doc["kind"],
+              prompt: text,
+              content: finalText,
+            });
+            const artifact: Artifact = { type: "document", id: doc.id, title: doc.title, kind: doc.kind };
+            resolve({
+              text: `${finalText}\n\n---\n*I have also saved this as **${doc.title}** in the Documents tab.*`,
+              artifact,
+            });
+          })
+          .catch(reject);
+      });
+
+    return { steps, finish: runAgent, live: true };
   };
 
 
@@ -175,7 +203,7 @@ function WorkspaceDetail() {
                     )
                     .join("\n"),
               ].join("\n\n---\n\n");
-              downloadText(`${slugify(ws.name)}-report-${stamp()}.md`, report);
+              downloadText(`${slugify(ws.name)}-report-${stamp()}.txt`, report, "text/plain");
             }}
           >
             <Download className="h-4 w-4" /> Export report

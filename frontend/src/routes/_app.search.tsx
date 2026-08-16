@@ -136,7 +136,7 @@ function SearchPage() {
         steps: workspaceSteps(active, results.length),
         finish: async () => {
           const name = active.length > 42 ? `${active.slice(0, 42)}…` : active;
-          const ws = await create(name, picks.map((p) => p.id));
+          const ws = await create(name, picks.map((p) => p.id), picks);
           const artifact: Artifact = {
             type: "workspace",
             id: ws.id,
@@ -171,7 +171,8 @@ function SearchPage() {
   };
 
   const addSelectedTo = (ws: Workspace) => {
-    addPapers(ws.id, [...selected]);
+    const selectedPapers = results.filter((p) => selected.has(p.id));
+    addPapers(ws.id, [...selected], selectedPapers);
     setSelected(new Set());
     setWsPickerOpen(false);
   };
@@ -180,7 +181,8 @@ function SearchPage() {
     const name = prompt("Name this workspace:", active);
     if (!name) return;
     try {
-      const ws = await create(name, [...selected]);
+      const selectedPapers = results.filter((p) => selected.has(p.id));
+      const ws = await create(name, [...selected], selectedPapers);
       setSelected(new Set());
       setWsPickerOpen(false);
       alert(`Workspace "${ws.name}" created with ${ws.paperIds.length} papers. Open it in Workflow.`);

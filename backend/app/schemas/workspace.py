@@ -11,6 +11,11 @@ class WorkspaceBase(BaseModel):
 
 class WorkspaceCreate(WorkspaceBase):
     paper_ids: list[str] = Field(default_factory=list, description="Initial list of paper IDs to add")
+    papers_data: list[dict] = Field(
+        default_factory=list,
+        description="Optional full paper metadata dicts from search results — used to persist durable paper rows (Sprint 4)",
+    )
+
 
 
 class WorkspaceUpdate(BaseModel):

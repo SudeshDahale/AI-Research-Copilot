@@ -77,7 +77,7 @@ export function DocumentViewer({ doc, onClose }: { doc: Doc; onClose: () => void
             </div>
           </div>
           <button
-            onClick={() => downloadText(`${slugify(doc.title)}.md`, doc.content)}
+            onClick={() => downloadText(`${slugify(doc.title)}.txt`, doc.content, "text/plain")}
             className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent"
           >
             <Download className="h-3.5 w-3.5" />

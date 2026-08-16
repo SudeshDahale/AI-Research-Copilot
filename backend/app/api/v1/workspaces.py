@@ -41,15 +41,22 @@ async def list_workspaces(
 )
 async def create_workspace(
     payload: WorkspaceCreate,
+    background_tasks: BackgroundTasks,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> WorkspaceOut:
     """Create a new workspace for the current user."""
-    return await workspace_service.create_workspace(
+    workspace = await workspace_service.create_workspace(
         db,
         obj_in=payload,
         user_id=current_user.id,
     )
+    for paper_id in payload.paper_ids:
+        background_tasks.add_task(
+            vector_service.embed_paper_by_id,
+            paper_id,
+        )
+    return workspace
 
 
 @router.put("/{id}", response_model=WorkspaceOut)

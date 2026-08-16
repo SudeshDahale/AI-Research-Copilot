@@ -18,6 +18,7 @@ dependencies = [
     "pgvector>=0.3.6",
     "voyageai>=0.3.2",
     "numpy>=1.26.0",
+    "groq>=0.11.0",
 ]
 
 [project.optional-dependencies]

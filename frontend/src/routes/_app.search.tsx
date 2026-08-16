@@ -442,7 +442,7 @@ function SearchPage() {
                 <button
                   onClick={() =>
                     downloadText(
-                      `${slugify(active)}-results-${stamp()}.md`,
+                      `${slugify(active)}-results-${stamp()}.txt`,
                       `# Ranked results — "${active}"\n\n_${results.length} papers · exported ${stamp()}_\n\n` +
                         results
                           .slice(0, 40)

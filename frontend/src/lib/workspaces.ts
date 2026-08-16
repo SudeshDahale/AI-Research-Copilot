@@ -44,12 +44,13 @@ export function useWorkspaces() {
 
   // Create workspace mutation
   const createMutation = useMutation({
-    mutationFn: (variables: { name: string; paperIds?: string[] }) =>
+    mutationFn: (variables: { name: string; paperIds?: string[]; papersData?: any[] }) =>
       apiFetch<BackendWorkspace>("/workspaces", {
         method: "POST",
         body: JSON.stringify({
           name: variables.name,
           paper_ids: variables.paperIds || [],
+          papers_data: variables.papersData || [],
         }),
       }),
     onSuccess: () => {
@@ -82,10 +83,13 @@ export function useWorkspaces() {
 
   // Add papers mutation
   const addPapersMutation = useMutation({
-    mutationFn: (variables: { id: string; paperIds: string[] }) =>
+    mutationFn: (variables: { id: string; paperIds: string[]; papersData?: any[] }) =>
       apiFetch<BackendWorkspace>(`/workspaces/${variables.id}/papers`, {
         method: "POST",
-        body: JSON.stringify({ paper_ids: variables.paperIds }),
+        body: JSON.stringify({
+          paper_ids: variables.paperIds,
+          papers_data: variables.papersData || [],
+        }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: WORKSPACES_QUERY_KEY });
@@ -103,8 +107,8 @@ export function useWorkspaces() {
     },
   });
 
-  const create = async (name: string, paperIds: string[] = []): Promise<Workspace> => {
-    const res = await createMutation.mutateAsync({ name, paperIds });
+  const create = async (name: string, paperIds: string[] = [], papersData: any[] = []): Promise<Workspace> => {
+    const res = await createMutation.mutateAsync({ name, paperIds, papersData });
     return mapWorkspace(res);
   };
 
@@ -117,8 +121,8 @@ export function useWorkspaces() {
     return removeMutation.mutateAsync(id);
   };
 
-  const addPapers = async (id: string, paperIds: string[]): Promise<Workspace> => {
-    const res = await addPapersMutation.mutateAsync({ id, paperIds });
+  const addPapers = async (id: string, paperIds: string[], papersData: any[] = []): Promise<Workspace> => {
+    const res = await addPapersMutation.mutateAsync({ id, paperIds, papersData });
     return mapWorkspace(res);
   };
 

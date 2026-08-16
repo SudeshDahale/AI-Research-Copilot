@@ -31,6 +31,9 @@ export type ChatTool = { id: string; label: string; icon?: typeof FileText };
 export type Execution = {
   steps: PlanStep[];
   finish: () => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>;
+  /** Sprint 7: mark this run as backend-driven. When true, AgentSteps shows
+   *  real progress (via onProgress below) instead of animating on a timer. */
+  live?: boolean;
 };
 
 type Msg = {
@@ -63,16 +66,24 @@ export function AgentChat({
   suggestions?: string[];
   seedMessage?: string;
   tools?: ChatTool[];
-  execute?: (text: string, toolId: string | null) => Execution | null;
+  execute?: (
+    text: string,
+    toolId: string | null,
+    onProgress: (index: number) => void,
+  ) => Execution | null;
   renderArtifact?: (a: Artifact) => React.ReactNode;
 }) {
   const [messages, setMessages] = useState<Msg[]>(() =>
     seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : [],
   );
   const [input, setInput] = useState("");
-  const [running, setRunning] = useState<{ steps: PlanStep[]; prompt: string; tag?: string } | null>(
-    null,
-  );
+  const [running, setRunning] = useState<{
+    steps: PlanStep[];
+    prompt: string;
+    tag?: string;
+    live?: boolean;
+  } | null>(null);
+  const [liveIndex, setLiveIndex] = useState(0);
   const finishRef = useRef<(() => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>) | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);
@@ -89,7 +100,7 @@ export function AgentChat({
 
   const busy = running !== null;
 
-  const send = (raw?: string) => {
+  const send = async (raw?: string) => {
     const text = (raw ?? input).trim();
     if (!text || busy) return;
     const toolId = activeTool?.id ?? null;
@@ -99,14 +110,46 @@ export function AgentChat({
     setMenuOpen(false);
     setActiveTool(null);
 
+    setLiveIndex(0);
     const run: Execution =
-      execute?.(text, toolId) ?? {
+      execute?.(text, toolId, setLiveIndex) ?? {
         steps: answerSteps(papers.length),
         finish: () => ({ text: buildAgentReply(text, papers, scope) }),
       };
 
-    finishRef.current = run.finish;
-    setRunning({ steps: run.steps, prompt: text, tag });
+    setRunning({ steps: run.steps, prompt: text, tag, live: run.live });
+
+    if (run.live) {
+      try {
+        const result = (await run.finish()) ?? { text: "" };
+        setRunning(null);
+        setMessages((m) => [
+          ...m,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: result.text,
+            prompt: text,
+            steps: run.steps,
+            artifact: result.artifact,
+          },
+        ]);
+      } catch (err: any) {
+        setRunning(null);
+        setMessages((m) => [
+          ...m,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            text: `⚠️ Agent execution error: ${err.message || "Failed to complete agent run."}`,
+            prompt: text,
+            steps: run.steps,
+          },
+        ]);
+      }
+    } else {
+      finishRef.current = run.finish;
+    }
   };
 
   const completeRun = async () => {
@@ -133,8 +176,9 @@ export function AgentChat({
       .map((m) => (m.role === "user" ? `\n---\n\n**You:** ${m.text}\n` : `\n${m.text}\n`))
       .join("\n");
     downloadText(
-      `${slugify(scope)}-agent-session-${stamp()}.md`,
+      `${slugify(scope)}-agent-session-${stamp()}.txt`,
       `# ${title} — ${scope}\n\n_${papers.length} papers · exported ${stamp()}_\n${body}`,
+      "text/plain"
     );
   };
 
@@ -182,7 +226,11 @@ export function AgentChat({
               <Bot className="h-3 w-3" />
             </div>
             <div className="min-w-0 flex-1">
-              <AgentSteps steps={running.steps} onDone={completeRun} />
+              <AgentSteps
+                steps={running.steps}
+                onDone={completeRun}
+                liveIndex={running.live ? liveIndex : undefined}
+              />
             </div>
           </div>
         )}
@@ -345,7 +393,7 @@ function ChatBubble({
           <div className="mt-1 flex items-center gap-1">
             <button
               onClick={() => {
-                downloadText(`${slugify(msg.prompt!)}-${slugify(scope)}-${stamp()}.md`, msg.text);
+                downloadText(`${slugify(msg.prompt!)}-${slugify(scope)}-${stamp()}.txt`, msg.text, "text/plain");
               }}
               className="btn-pop inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent"
             >

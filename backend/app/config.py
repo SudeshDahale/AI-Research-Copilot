@@ -30,9 +30,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
 
-    # --- LLM (wired up in Sprint 5) ---
+    # --- LLM (Sprint 5 / Groq) ---
+    groq_api_key: str = ""
     llm_api_key: str = ""
-    llm_model: str = "claude-sonnet-4-5-20250929"
+    llm_model: str = "llama-3.3-70b-versatile"
 
     # --- Embeddings (Sprint 6) ---
     voyage_api_key: str = ""

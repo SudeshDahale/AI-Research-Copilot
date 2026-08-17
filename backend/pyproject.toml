@@ -21,6 +21,7 @@ dependencies = [
     "groq>=0.11.0",
     "langgraph>=0.2.60",
     "sse-starlette>=2.1.3",
+    "celery[redis]>=5.4.0",
 ]
 
 [project.optional-dependencies]

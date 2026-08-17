@@ -53,7 +53,43 @@ function WorkspaceDetail() {
   );
 
   const execute = (text: string, toolId: string | null, onProgress: (i: number) => void) => {
-    const wantsDoc = toolId === "doc";
+    const wantsDoc = toolId === "doc" || /document|report|write.?up|draft/i.test(text);
+
+    if (wantsDoc) {
+      // Sprint 8: document generation is now a durable background job, not
+      // part of the live SSE agent chat. Enqueue it and return right away -
+      // the Documents tab polls Postgres for real progress, so this keeps
+      // running even if the tab closes mid-generation.
+      const kind = /review/i.test(text)
+        ? "Literature review"
+        : /summar/i.test(text)
+          ? "Summary"
+          : /outline/i.test(text)
+            ? "Outline"
+            : /brief/i.test(text)
+              ? "Brief"
+              : "Report";
+      const title = text.replace(/^(generate|create|write|draft)\s+(a|an|the)?\s*/i, "").trim() || kind;
+
+      const steps = [
+        { label: "Queuing document job", detail: title, ms: 0 },
+        { label: "Enqueued", detail: "Generating in the background", ms: 0 },
+      ];
+
+      const finish = async () => {
+        onProgress(0);
+        const doc = await createDoc({ workspaceId: id, title, kind: kind as Doc["kind"], prompt: text });
+        onProgress(steps.length);
+        const artifact: Artifact = { type: "document", id: doc.id, title: doc.title, kind: doc.kind };
+        return {
+          text: `Started generating **${doc.title}** in the background. It'll appear in the **Documents** tab — you can close this tab and it'll keep going; reopen anytime to check progress or read it once it's ready.`,
+          artifact,
+        };
+      };
+
+      return { steps, finish, live: true };
+    }
+
     const lower = text.toLowerCase();
 
     // Pick the step list that matches the real graph path this question
@@ -61,7 +97,7 @@ function WorkspaceDetail() {
     const steps =
       lower.includes("gap") || lower.includes("missing") || lower.includes("under")
         ? gapAgentSteps(papers.length)
-        : lower.includes("literature review") || lower.includes("related work") || lower.includes("draft") || wantsDoc
+        : lower.includes("literature review") || lower.includes("related work") || lower.includes("draft")
           ? litReviewAgentSteps(papers.length)
           : genericAgentSteps(papers.length);
 
@@ -77,40 +113,11 @@ function WorkspaceDetail() {
           } else if (event === "done") {
             finalText = data.text ?? "";
             onProgress(steps.length);
+            resolve({ text: finalText });
           } else if (event === "error") {
             reject(new Error(data.message ?? "Agent run failed"));
           }
-        })
-          .then(() => {
-            if (!wantsDoc) {
-              resolve({ text: finalText });
-              return;
-            }
-            // Document mode: save the agent's real output as a workspace document.
-            const kind = /review/i.test(text)
-              ? "Literature review"
-              : /summar/i.test(text)
-                ? "Summary"
-                : /outline/i.test(text)
-                  ? "Outline"
-                  : /brief/i.test(text)
-                    ? "Brief"
-                    : "Report";
-            const title = text.replace(/^(generate|create|write|draft)\s+(a|an|the)?\s*/i, "").trim() || kind;
-            const doc = createDoc({
-              workspaceId: id,
-              title,
-              kind: kind as Doc["kind"],
-              prompt: text,
-              content: finalText,
-            });
-            const artifact: Artifact = { type: "document", id: doc.id, title: doc.title, kind: doc.kind };
-            resolve({
-              text: `${finalText}\n\n---\n*I have also saved this as **${doc.title}** in the Documents tab.*`,
-              artifact,
-            });
-          })
-          .catch(reject);
+        }).catch(reject);
       });
 
     return { steps, finish: runAgent, live: true };

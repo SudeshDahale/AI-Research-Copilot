@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, X, Download, Clock } from "lucide-react";
+import { FileText, X, Download, Clock, Loader2, AlertCircle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Doc } from "@/lib/documents";
@@ -39,7 +39,17 @@ export function DocumentList({
                 <div className="truncate text-sm font-medium group-hover:text-accent">{d.title}</div>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="rounded-full border border-border px-1.5 py-0">{d.kind}</span>
-                  <span>{d.words.toLocaleString()} words</span>
+                  {d.status === "pending" || d.status === "processing" ? (
+                    <span className="inline-flex items-center gap-1 text-accent">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" /> Generating…
+                    </span>
+                  ) : d.status === "failed" ? (
+                    <span className="inline-flex items-center gap-1 text-destructive">
+                      <AlertCircle className="h-2.5 w-2.5" /> Failed
+                    </span>
+                  ) : (
+                    <span>{d.words.toLocaleString()} words</span>
+                  )}
                   <span className="inline-flex items-center gap-1">
                     <Clock className="h-2.5 w-2.5" />
                     {new Date(d.createdAt).toLocaleDateString()}
@@ -101,7 +111,22 @@ export function DocumentViewer({ doc, onClose }: { doc: Doc; onClose: () => void
           </button>
         </div>
         <div className="agent-md overflow-y-auto px-8 py-6 text-[14px] leading-relaxed">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.content}</ReactMarkdown>
+          {doc.status === "pending" || doc.status === "processing" ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
+              <Loader2 className="h-6 w-6 animate-spin text-accent" />
+              <p className="text-sm">
+                Still generating in the background — this document will keep going even if you close this
+                window. Reopen it anytime to check back.
+              </p>
+            </div>
+          ) : doc.status === "failed" ? (
+            <div className="flex flex-col items-center gap-3 py-12 text-center text-destructive">
+              <AlertCircle className="h-6 w-6" />
+              <p className="text-sm">Generation failed{doc.error ? `: ${doc.error}` : "."}</p>
+            </div>
+          ) : (
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.content}</ReactMarkdown>
+          )}
         </div>
       </div>
     </div>

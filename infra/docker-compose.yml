@@ -50,5 +50,26 @@ services:
       redis:
         condition: service_healthy
 
+  worker:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: arclight-worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - ../backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://arclight:arclight@postgres:5432/arclight
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ../backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+        
+
 volumes:
   postgres_data:

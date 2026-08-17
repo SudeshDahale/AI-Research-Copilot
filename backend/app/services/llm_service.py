@@ -3,12 +3,18 @@ from __future__ import annotations
 
 import json
 from typing import Any
+import httpx
 from groq import AsyncGroq
 
 from app.config import settings
 from app.core.logging import logger
 
 _client: AsyncGroq | None = None
+
+# Conservative timeout: free-tier Groq can be slow under load but should
+# never need more than 30s for structured JSON tasks. Without a timeout,
+# a single slow request can block the entire agent graph indefinitely.
+_GROQ_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
 
 
 def get_llm_client() -> AsyncGroq | None:
@@ -17,7 +23,7 @@ def get_llm_client() -> AsyncGroq | None:
     if not api_key:
         return None
     if _client is None:
-        _client = AsyncGroq(api_key=api_key)
+        _client = AsyncGroq(api_key=api_key, http_client=httpx.AsyncClient(timeout=_GROQ_TIMEOUT))
     return _client
 
 
@@ -26,6 +32,7 @@ async def generate_chat_completion(
     model: str | None = None,
     temperature: float = 0.2,
     response_format: dict[str, str] | None = None,
+    max_tokens: int | None = None,
 ) -> str | None:
     """Generate a chat completion using Groq."""
     client = get_llm_client()
@@ -41,6 +48,8 @@ async def generate_chat_completion(
     }
     if response_format:
         kwargs["response_format"] = response_format
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
 
     try:
         response = await client.chat.completions.create(**kwargs)
@@ -75,6 +84,7 @@ async def analyze_paper_abstract(title: str, abstract: str) -> dict[str, Any] | 
     raw_response = await generate_chat_completion(
         messages=messages,
         response_format={"type": "json_object"},
+        max_tokens=1024,
     )
     if not raw_response:
         return None
@@ -93,16 +103,24 @@ async def generate_structured_json(
     valid JSON but doesn't accept a schema like tool-calling APIs do, so the
     shape has to be spelled out in the prompt itself. schema_hint is that
     spelled-out shape, appended to the system prompt.
+
+    max_tokens=2048 caps cost/latency — all agent node outputs are short
+    structured objects, never long-form prose, so 2048 is generous.
     """
     messages = [
         {"role": "system", "content": f"{system}\n\nReturn a valid JSON object with this shape:\n{schema_hint}"},
         {"role": "user", "content": prompt},
     ]
-    raw = await generate_chat_completion(messages=messages, response_format={"type": "json_object"})
+    raw = await generate_chat_completion(
+        messages=messages,
+        response_format={"type": "json_object"},
+        max_tokens=2048,
+    )
     if not raw:
         return None
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
         logger.error(f"generate_structured_json: model did not return valid JSON: {raw[:200]!r}")
-        return None    
+        return None
+

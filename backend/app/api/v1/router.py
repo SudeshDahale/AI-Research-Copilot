@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, search, workspaces, papers, agent
+from app.api.v1 import auth, search, workspaces, papers, agent, documents
 
 api_router = APIRouter()
 
@@ -16,3 +16,4 @@ api_router.include_router(search.router, prefix="/search", tags=["search"])
 api_router.include_router(workspaces.router, prefix="/workspaces", tags=["workspaces"])
 api_router.include_router(papers.router, prefix="/papers", tags=["papers"])
 api_router.include_router(agent.router, prefix="/agent", tags=["agent"])
+api_router.include_router(documents.router, prefix="/documents", tags=["documents"])

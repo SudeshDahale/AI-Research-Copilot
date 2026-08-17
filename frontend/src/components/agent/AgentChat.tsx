@@ -89,6 +89,8 @@ export function AgentChat({
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [thinkingTooLong, setThinkingTooLong] = useState(false);
+  const thinkingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -96,6 +98,18 @@ export function AgentChat({
 
   useEffect(() => {
     if (!running) inputRef.current?.focus();
+  }, [running]);
+
+  // 15s "still thinking" warning — only for live backend runs
+  useEffect(() => {
+    if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+    setThinkingTooLong(false);
+    if (running?.live) {
+      thinkingTimerRef.current = setTimeout(() => setThinkingTooLong(true), 15_000);
+    }
+    return () => {
+      if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+    };
   }, [running]);
 
   const busy = running !== null;
@@ -110,6 +124,7 @@ export function AgentChat({
     setMenuOpen(false);
     setActiveTool(null);
 
+    setThinkingTooLong(false);
     setLiveIndex(0);
     const run: Execution =
       execute?.(text, toolId, setLiveIndex) ?? {
@@ -231,6 +246,11 @@ export function AgentChat({
                 onDone={completeRun}
                 liveIndex={running.live ? liveIndex : undefined}
               />
+              {thinkingTooLong && (
+                <p className="mt-2 text-[11px] text-muted-foreground animate-pulse">
+                  ⏳ Still thinking — Groq inference can take a moment on free tier…
+                </p>
+              )}
             </div>
           </div>
         )}

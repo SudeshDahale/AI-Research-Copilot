@@ -231,4 +231,5 @@ All endpoints are prefixed with `/api/v1`.
 
 ## License
 
-MIT License
+MIT License.
+

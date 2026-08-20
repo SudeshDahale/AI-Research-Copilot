@@ -22,8 +22,22 @@ def configure_logging() -> None:
     root.setLevel(level)
     root.handlers = [handler]
 
-    # Quiet down noisy third-party loggers.
-    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    # Quiet down noisy third-party loggers — these fire at DEBUG level and
+    # flood stdout, making every request feel slow due to I/O contention.
+    for noisy in (
+        "uvicorn.access",
+        "sqlalchemy.engine",
+        "sqlalchemy.pool",
+        "sqlalchemy.dialects",
+        "sqlalchemy.orm",
+        "asyncpg",
+        "watchfiles",
+        "httpx",
+        "httpcore",
+        "groq",
+        "voyageai",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 logger = logging.getLogger("arclight")

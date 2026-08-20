@@ -1,39 +1,31 @@
-"""Shared state carried through the LangGraph agent - Sprint 7."""
+"""Agent state — Sprint 8.
+
+Simplified: single `result` dict populated by whichever analysis node runs.
+Embeddings are never carried here (stripped in retrieve.py before this point).
+"""
 from __future__ import annotations
 
 from typing import TypedDict
 
 
-class Cluster(TypedDict):
-    theme: str
-    paper_ids: list[str]
-
-
 class AgentState(TypedDict, total=False):
-    # Input
+    # ── Input ────────────────────────────────────────────────────────────────
     query: str
     workspace_id: str | None
-    task: str  # "gaps" | "lit_review" | "summary" | "compare" | "contradictions" | "generic"
+    intent: str  # "summary"|"gaps"|"compare"|"contradictions"|"literature_review"|"generic"
 
-    # Populated by search_node
+    # ── Populated by retrieve.py ─────────────────────────────────────────────
+    # Embeddings are stripped before reaching here — never sent to LLM nodes.
     papers: list[dict]
 
-    # Populated by ranking_node
-    ranked_papers: list[dict]
+    # ── Populated by whichever single analysis node runs ─────────────────────
+    result: dict
 
-    # Populated by clustering_node
-    clusters: list[Cluster]
-
-    # Populated by summarize_node
-    corpus_summary: dict
-
-    # Populated by gap_detection_node
-    gaps: list[str]
-
-    # Populated by lit_review_node
-    lit_review: str
-
-    # Populated by the final compose step
+    # ── Populated by compose.py ──────────────────────────────────────────────
     final_text: str
 
+    # ── Timing/perf (populated incrementally) ────────────────────────────────
+    metrics: dict
+
+    # ── Error propagation ────────────────────────────────────────────────────
     error: str

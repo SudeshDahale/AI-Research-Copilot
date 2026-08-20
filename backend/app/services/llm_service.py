@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, AsyncIterator
 import httpx
 from groq import AsyncGroq
 
@@ -124,3 +124,35 @@ async def generate_structured_json(
         logger.error(f"generate_structured_json: model did not return valid JSON: {raw[:200]!r}")
         return None
 
+
+async def stream_completion(
+    messages: list[dict[str, str]],
+    model: str | None = None,
+    max_tokens: int = 2048,
+    temperature: float = 0.3,
+) -> AsyncIterator[str]:
+    """Yield text token-chunks as they arrive from Groq.
+
+    Usage (in an async generator):
+        async for chunk in stream_completion(messages):
+            yield {"event": "token", "data": {"chunk": chunk}}
+    """
+    client = get_llm_client()
+    if not client:
+        logger.warning("stream_completion: no API key — yielding nothing.")
+        return
+
+    chosen_model = model or settings.llm_model or "llama-3.3-70b-versatile"
+    try:
+        async with client.chat.completions.stream(
+            model=chosen_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        ) as stream:
+            async for text in stream.text_stream:
+                if text:
+                    yield text
+    except Exception as exc:
+        logger.error(f"stream_completion failed: {exc}", exc_info=True)
+        return

@@ -1,33 +1,38 @@
-"""Prompt text for gap_detection_node - Sprint 7 (Groq JSON mode)."""
+"""Gap detection prompts — Sprint 8.
+
+Standalone: does NOT require a corpus_summary from summarize_node.
+The LLM reads papers directly and identifies gaps itself.
+"""
 from __future__ import annotations
 
-SCHEMA_HINT = '{"gaps": ["specific, evidence-grounded research gap strings"]}'
-
-SYSTEM = (
-    "You are a research assistant identifying genuine gaps in a body of "
-    "literature. A gap must be traceable to something actually missing or "
-    "unaddressed across the given papers - not a generic template statement "
-    "like 'more research is needed'. If the corpus is too small or too "
-    "narrow to responsibly claim a gap, return fewer, more honest items "
-    "rather than padding the list."
+SCHEMA_HINT = (
+    '{"gaps": ['
+    '{"title": "short gap label", "description": "2-3 sentence evidence-grounded description", '
+    '"supporting_papers": ["paper id or title"]}'
+    ']}'
 )
 
+SYSTEM = (
+    "You are a research analyst identifying genuine, evidence-grounded gaps in a body of literature. "
+    "A gap must be directly traceable to something absent, untested, or unaddressed across the given papers. "
+    "Do NOT produce generic statements like 'more research is needed'. "
+    "If the corpus is too small or narrow to claim a gap responsibly, return fewer honest items. "
+    "Ground each gap in specific paper titles or findings."
+)
 
-def build_prompt(papers: list[dict], clusters: list[dict], corpus_summary: dict) -> str:
+_MAX_ABSTRACT = 450
+
+
+def build_prompt(papers: list[dict]) -> str:
     paper_lines = "\n".join(
-        f"- [{p.get('id')}] {p.get('title', '')} ({p.get('year', '?')}): "
-        f"{(p.get('abstract') or '')[:400]}"
+        f"[{p.get('id', '?')}] {p.get('title', '')} ({p.get('year', '?')}): "
+        f"{(p.get('abstract') or '')[:_MAX_ABSTRACT]}"
         for p in papers
     )
-    theme_lines = "\n".join(f"- {c.get('theme')}" for c in clusters) or "(no distinct themes)"
-
     return (
-        f"Corpus overview: {corpus_summary.get('overview', '')}\n"
-        f"Consensus: {corpus_summary.get('consensus', '')}\n\n"
-        f"Themes covered:\n{theme_lines}\n\n"
-        f"Papers:\n{paper_lines}\n\n"
-        "Identify 2-4 specific research gaps this corpus leaves open - things "
-        "no paper here addresses, methods no paper combines, populations or "
-        "settings no paper tests. Ground each gap in what's actually absent "
-        "from the abstracts above."
+        f"Papers in scope ({len(papers)} total):\n{paper_lines}\n\n"
+        "Identify 2–5 specific research gaps this corpus leaves open: "
+        "methods no paper combines, populations no paper tests, "
+        "benchmarks missing, or conclusions that rely on unstated assumptions. "
+        "For each gap cite which paper(s) reveal the absence."
     )

@@ -44,7 +44,7 @@ def _route_after_retrieve(state: AgentState) -> str:
         "generic": "summary",  # generic falls back to a summary
     }
     chosen = route_map.get(intent, "summary")
-    logger.info(f"graph: routing intent={intent!r} → {chosen}")
+    logger.info(f"graph: routing intent={intent!r} -> {chosen}")
     return chosen
 
 

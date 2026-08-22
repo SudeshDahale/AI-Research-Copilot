@@ -6,18 +6,9 @@ import { useDocuments, type Doc } from "@/lib/documents";
 import { getCachedPapers, searchCachedPapers } from "@/lib/paper-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AgentChat } from "@/components/agent/AgentChat";
+import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
 import { DocumentList, DocumentViewer } from "@/components/DocumentPanel";
-import { buildAgentReply } from "@/lib/agent";
-import {
-  answerSteps,
-  buildDocument,
-  documentSteps,
-  gapAgentSteps,
-  litReviewAgentSteps,
-  genericAgentSteps,
-  type Artifact,
-} from "@/lib/agent-plan";
+import { type Artifact } from "@/lib/agent-plan";
 import { downloadText, slugify, stamp } from "@/lib/download";
 import { apiStream } from "@/lib/api";
 
@@ -52,14 +43,15 @@ function WorkspaceDetail() {
     [ws],
   );
 
-  const execute = (text: string, toolId: string | null, onProgress: (i: number) => void) => {
-    const wantsDoc = toolId === "doc" || /document|report|write.?up|draft/i.test(text);
+  const execute = (
+    text: string,
+    toolId: string | null,
+    onProgress: (index: number) => void,
+    callbacks?: StreamCallbacks,
+  ) => {
+    const wantsDoc = toolId === "doc";
 
     if (wantsDoc) {
-      // Sprint 8: document generation is now a durable background job, not
-      // part of the live SSE agent chat. Enqueue it and return right away -
-      // the Documents tab polls Postgres for real progress, so this keeps
-      // running even if the tab closes mid-generation.
       const kind = /review/i.test(text)
         ? "Literature review"
         : /summar/i.test(text)
@@ -90,29 +82,34 @@ function WorkspaceDetail() {
       return { steps, finish, live: true };
     }
 
-    const lower = text.toLowerCase();
-
-    // Pick the step list that matches the real graph path this question
-    // will take (mirrors detect_task() in backend/app/agents/graph.py).
-    const steps =
-      lower.includes("gap") || lower.includes("missing") || lower.includes("under")
-        ? gapAgentSteps(papers.length)
-        : lower.includes("literature review") || lower.includes("related work") || lower.includes("draft")
-          ? litReviewAgentSteps(papers.length)
-          : genericAgentSteps(papers.length);
-
-    let stepCount = 0;
+    const steps = [
+      { label: "Loading papers in scope", detail: `${papers.length} papers`, ms: 0 },
+      { label: "Fast synthesis", detail: "Streaming instant response", ms: 0 },
+      { label: "Deep reasoning", detail: "Refining with full corpus analysis", ms: 0 },
+    ];
 
     const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
       new Promise((resolve, reject) => {
         let finalText = "";
         apiStream("/agent/run", { query: text, workspace_id: id }, (event, data) => {
-          if (event === "step") {
-            stepCount = Math.min(stepCount + 1, steps.length - 1);
-            onProgress(stepCount);
-          } else if (event === "done") {
+          if (event === "thinking" || event === "retrieving") {
+            onProgress(1);
+          } else if (event === "token") {
+            onProgress(2);
+            callbacks?.onToken?.(data.chunk ?? "");
+          } else if (event === "fast_completed") {
+            onProgress(2);
+            callbacks?.onFastCompleted?.(data.text ?? "");
+          } else if (event === "refining") {
+            onProgress(2);
+            callbacks?.onRefining?.(data.message ?? "");
+          } else if (event === "refined_completed") {
             finalText = data.text ?? "";
-            onProgress(steps.length);
+            onProgress(3);
+            callbacks?.onRefinedCompleted?.(finalText);
+          } else if (event === "completed") {
+            if (!finalText) finalText = data.text ?? "";
+            onProgress(3);
             resolve({ text: finalText });
           } else if (event === "error") {
             reject(new Error(data.message ?? "Agent run failed"));

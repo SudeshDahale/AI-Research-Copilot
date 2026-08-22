@@ -10,23 +10,35 @@ import time
 
 from app.agents.state import AgentState
 from app.agents.prompts import gap_prompts
+from app.agents import cache
 from app.services import llm_service
 from app.core.logging import logger
 
+_FAST_MODEL = "openai/gpt-oss-20b"
 _MAX_PAPERS = 20
 
 
 async def gaps_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
+    workspace_id = state.get("workspace_id")
 
     if not papers:
         return {"result": {"gaps": []}}
+
+    if workspace_id:
+        cached = cache.get_corpus_cache(f"{workspace_id}:gaps", len(papers))
+        if cached is not None:
+            elapsed = round((time.monotonic() - t0) * 1000)
+            existing_metrics = state.get("metrics") or {}
+            logger.info(f"gaps_node: cache hit in {elapsed}ms")
+            return {"result": cached, "metrics": {**existing_metrics, "llm_ms": elapsed, "cache_hit": True}}
 
     result = await llm_service.generate_structured_json(
         system=gap_prompts.SYSTEM,
         prompt=gap_prompts.build_prompt(papers),
         schema_hint=gap_prompts.SCHEMA_HINT,
+        model=_FAST_MODEL,
     )
 
     gaps = (result or {}).get("gaps", [])
@@ -50,6 +62,8 @@ async def gaps_node(state: AgentState) -> dict:
                 "supporting_papers": [],
             },
         ]
+    elif workspace_id:
+        cache.set_corpus_cache(f"{workspace_id}:gaps", len(papers), {"gaps": gaps})
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"gaps_node: done in {elapsed}ms papers={len(papers)} gaps={len(gaps)}")

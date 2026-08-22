@@ -11,6 +11,9 @@ import {
   FileText,
   X,
   ArrowRight,
+  Zap,
+  BrainCircuit,
+  Loader2,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -28,11 +31,17 @@ import {
 
 export type ChatTool = { id: string; label: string; icon?: typeof FileText };
 
+export type StreamCallbacks = {
+  onToken?: (token: string) => void;
+  onFastCompleted?: (text: string) => void;
+  onRefining?: (message: string) => void;
+  onRefinedCompleted?: (text: string) => void;
+};
+
 export type Execution = {
   steps: PlanStep[];
   finish: () => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>;
-  /** Sprint 7: mark this run as backend-driven. When true, AgentSteps shows
-   *  real progress (via onProgress below) instead of animating on a timer. */
+  /** When true, AgentSteps shows real progress instead of animating on a timer. */
   live?: boolean;
 };
 
@@ -44,6 +53,8 @@ type Msg = {
   steps?: PlanStep[];
   artifact?: Artifact;
   tag?: string;
+  status?: "streaming" | "fast" | "refining" | "refined";
+  refiningStage?: string;
 };
 
 export function AgentChat({
@@ -70,6 +81,7 @@ export function AgentChat({
     text: string,
     toolId: string | null,
     onProgress: (index: number) => void,
+    callbacks?: StreamCallbacks,
   ) => Execution | null;
   renderArtifact?: (a: Artifact) => React.ReactNode;
 }) {
@@ -119,15 +131,111 @@ export function AgentChat({
     if (!text || busy) return;
     const toolId = activeTool?.id ?? null;
     const tag = activeTool?.label;
+    
     setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text, tag }]);
     setInput("");
     setMenuOpen(false);
     setActiveTool(null);
-
     setThinkingTooLong(false);
     setLiveIndex(0);
+
+    const assistantMsgId = crypto.randomUUID();
+    let accumulatedText = "";
+
+    const streamCallbacks: StreamCallbacks = {
+      onToken: (chunk) => {
+        if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+        setThinkingTooLong(false);
+        accumulatedText += chunk;
+        setRunning(null); // Switch immediately to live streaming bubble
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantMsgId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              text: accumulatedText,
+              status: "streaming",
+            };
+            return updated;
+          } else {
+            return [
+              ...prev,
+              {
+                id: assistantMsgId,
+                role: "assistant",
+                text: accumulatedText,
+                status: "streaming",
+                prompt: text,
+              },
+            ];
+          }
+        });
+      },
+      onFastCompleted: (fastText) => {
+        if (thinkingTimerRef.current) clearTimeout(thinkingTimerRef.current);
+        setThinkingTooLong(false);
+        accumulatedText = fastText || accumulatedText;
+        setRunning(null);
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantMsgId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              text: accumulatedText,
+              status: "refining",
+            };
+            return updated;
+          } else {
+            return [
+              ...prev,
+              {
+                id: assistantMsgId,
+                role: "assistant",
+                text: accumulatedText,
+                status: "refining",
+                prompt: text,
+              },
+            ];
+          }
+        });
+      },
+      onRefining: (stageMessage) => {
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantMsgId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              refiningStage: stageMessage,
+            };
+            return updated;
+          }
+          return prev;
+        });
+      },
+      onRefinedCompleted: (refinedText) => {
+        accumulatedText = refinedText;
+        setMessages((prev) => {
+          const idx = prev.findIndex((m) => m.id === assistantMsgId);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = {
+              ...updated[idx],
+              text: refinedText,
+              status: "refined",
+              refiningStage: undefined,
+            };
+            return updated;
+          }
+          return prev;
+        });
+      },
+    };
+
     const run: Execution =
-      execute?.(text, toolId, setLiveIndex) ?? {
+      execute?.(text, toolId, setLiveIndex, streamCallbacks) ?? {
         steps: answerSteps(papers.length),
         finish: () => ({ text: buildAgentReply(text, papers, scope) }),
       };
@@ -138,17 +246,32 @@ export function AgentChat({
       try {
         const result = (await run.finish()) ?? { text: "" };
         setRunning(null);
-        setMessages((m) => [
-          ...m,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            text: result.text,
-            prompt: text,
-            steps: run.steps,
-            artifact: result.artifact,
-          },
-        ]);
+        setMessages((m) => {
+          const idx = m.findIndex((msg) => msg.id === assistantMsgId);
+          if (idx >= 0) {
+            const updated = [...m];
+            updated[idx] = {
+              ...updated[idx],
+              text: result.text || updated[idx].text,
+              status: "refined",
+              artifact: result.artifact,
+              refiningStage: undefined,
+            };
+            return updated;
+          }
+          return [
+            ...m,
+            {
+              id: assistantMsgId,
+              role: "assistant",
+              text: result.text,
+              prompt: text,
+              steps: run.steps,
+              artifact: result.artifact,
+              status: "refined",
+            },
+          ];
+        });
       } catch (err: any) {
         setRunning(null);
         setMessages((m) => [
@@ -235,7 +358,7 @@ export function AgentChat({
         {messages.map((m) => (
           <ChatBubble key={m.id} msg={m} scope={scope} renderArtifact={renderArtifact} />
         ))}
-        {running && (
+        {running && !messages.some((m) => m.role === "assistant" && (m.status === "streaming" || m.status === "refining")) && (
           <div className="flex gap-2">
             <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
               <Bot className="h-3 w-3" />
@@ -390,7 +513,29 @@ function ChatBubble({
             </span>
           </div>
         )}
-        {!isUser && msg.steps && <AgentSteps steps={msg.steps} collapsedSummary />}
+
+        {!isUser && (msg.status === "streaming" || msg.status === "refining" || msg.status === "fast") && (
+          <div className="mb-1.5 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+              <Zap className="h-2.5 w-2.5" /> Fast Insight
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary animate-pulse">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              {msg.refiningStage || "Deep Agent Refining in background..."}
+            </span>
+          </div>
+        )}
+
+        {!isUser && msg.status === "refined" && (
+          <div className="mb-1.5 flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+              <BrainCircuit className="h-2.5 w-2.5" /> Deep Research Analysis
+            </span>
+          </div>
+        )}
+
+        {!isUser && msg.steps && !msg.status && <AgentSteps steps={msg.steps} collapsedSummary />}
+
         <div
           className={`rounded-2xl px-3 py-2 text-[13px] leading-relaxed shadow-sm ${
             isUser
@@ -402,14 +547,14 @@ function ChatBubble({
             msg.text
           ) : (
             <div className="agent-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text || "…"}</ReactMarkdown>
             </div>
           )}
         </div>
         {!isUser && msg.artifact && renderArtifact && (
           <div className="mt-2">{renderArtifact(msg.artifact)}</div>
         )}
-        {!isUser && msg.prompt && (
+        {!isUser && msg.prompt && msg.text && (
           <div className="mt-1 flex items-center gap-1">
             <button
               onClick={() => {

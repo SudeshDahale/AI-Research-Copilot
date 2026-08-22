@@ -10,15 +10,18 @@ import time
 
 from app.agents.state import AgentState
 from app.agents.prompts import compare_prompts
+from app.agents import cache
 from app.services import llm_service
 from app.core.logging import logger
 
+_FAST_MODEL = "openai/gpt-oss-20b"
 _MAX_PAPERS = 15  # comparison gets verbose; keep prompt manageable
 
 
 async def compare_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
+    workspace_id = state.get("workspace_id")
 
     if not papers:
         return {"result": {"comparisons": []}}
@@ -31,10 +34,19 @@ async def compare_node(state: AgentState) -> dict:
             }
         }
 
+    if workspace_id:
+        cached = cache.get_corpus_cache(f"{workspace_id}:compare", len(papers))
+        if cached is not None:
+            elapsed = round((time.monotonic() - t0) * 1000)
+            existing_metrics = state.get("metrics") or {}
+            logger.info(f"compare_node: cache hit in {elapsed}ms")
+            return {"result": cached, "metrics": {**existing_metrics, "llm_ms": elapsed, "cache_hit": True}}
+
     result = await llm_service.generate_structured_json(
         system=compare_prompts.SYSTEM,
         prompt=compare_prompts.build_prompt(papers),
         schema_hint=compare_prompts.SCHEMA_HINT,
+        model=_FAST_MODEL,
     )
 
     comparisons = (result or {}).get("comparisons", [])
@@ -42,6 +54,8 @@ async def compare_node(state: AgentState) -> dict:
     if not comparisons:
         logger.warning("compare_node: LLM returned no comparisons")
         comparisons = []
+    elif workspace_id:
+        cache.set_corpus_cache(f"{workspace_id}:compare", len(papers), {"comparisons": comparisons})
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"compare_node: done in {elapsed}ms papers={len(papers)} comparisons={len(comparisons)}")

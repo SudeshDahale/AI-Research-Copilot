@@ -13,15 +13,22 @@ async def test_agent_run_endpoint_streaming():
 
     app.dependency_overrides[get_current_user] = lambda: mock_user
 
-    async def mock_astream(state):
-        yield {"search": {"papers": [{"id": "p1", "title": "Test"}]}}
-        yield {"ranking": {"ranked_papers": [{"id": "p1", "title": "Test"}]}}
-        yield {"clustering": {"clusters": [{"theme": "AI", "paper_ids": ["p1"]}]}}
-        yield {"summarize": {"corpus_summary": {"overview": "Overview"}}}
-        yield {"gap_detection": {"gaps": ["Gap 1"]}}
-        yield {"compose": {"final_text": "## Research gaps\nDone"}}
+    async def mock_retrieve(state):
+        return {"papers": [{"id": "p1", "title": "Test Paper", "abstract": "Test abstract"}]}
 
-    with patch("app.api.v1.agent.agent_graph.astream", side_effect=mock_astream):
+    async def mock_fast_stream(query, papers, intent="generic", max_papers=5):
+        yield "Fast "
+        yield "insight."
+
+    async def mock_deep_stream(query, intent, workspace_id=None, papers=None):
+        yield {"type": "refining", "stage": "summary", "message": "Synthesizing full corpus"}
+        yield {"type": "completed", "final_text": "## Deep Research Report\nDetailed synthesis", "metrics": {}}
+
+    with (
+        patch("app.api.v1.agent.retrieve_node", side_effect=mock_retrieve),
+        patch("app.api.v1.agent.stream_fast_pipeline", side_effect=mock_fast_stream),
+        patch("app.api.v1.agent.run_deep_pipeline", side_effect=mock_deep_stream),
+    ):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
@@ -31,8 +38,14 @@ async def test_agent_run_endpoint_streaming():
             assert response.status_code == 200
             assert "text/event-stream" in response.headers.get("content-type", "")
             content = response.text
-            assert "event: step" in content
-            assert "event: done" in content
-            assert "## Research gaps" in content
+            assert "event: thinking" in content
+            assert "event: retrieving" in content
+            assert "event: token" in content
+            assert "event: fast_completed" in content
+            assert "event: refining" in content
+            assert "event: refined_completed" in content
+            assert "event: completed" in content
+            assert "Fast insight." in content
+            assert "## Deep Research Report" in content
 
     app.dependency_overrides.clear()

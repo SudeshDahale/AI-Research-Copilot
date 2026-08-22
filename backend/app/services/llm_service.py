@@ -40,7 +40,7 @@ async def generate_chat_completion(
         logger.warning("GROQ_API_KEY / LLM_API_KEY not set — skipping LLM generation.")
         return None
 
-    chosen_model = model or settings.llm_model or "llama-3.3-70b-versatile"
+    chosen_model = model or settings.llm_model or "openai/gpt-oss-120b"
     kwargs: dict[str, Any] = {
         "model": chosen_model,
         "messages": messages,
@@ -94,18 +94,28 @@ async def analyze_paper_abstract(title: str, abstract: str) -> dict[str, Any] | 
     except json.JSONDecodeError:
         return None
 
+
 async def generate_structured_json(
-    system: str, prompt: str, schema_hint: str
+    system: str,
+    prompt: str,
+    schema_hint: str,
+    model: str | None = None,
+    max_tokens: int = 2048,
 ) -> dict[str, Any] | None:
-    """Generic structured-output helper for Sprint 7's agent nodes.
+    """Generic structured-output helper for agent nodes.
 
     Groq's JSON mode (response_format={"type": "json_object"}) guarantees
     valid JSON but doesn't accept a schema like tool-calling APIs do, so the
     shape has to be spelled out in the prompt itself. schema_hint is that
     spelled-out shape, appended to the system prompt.
 
-    max_tokens=2048 caps cost/latency — all agent node outputs are short
-    structured objects, never long-form prose, so 2048 is generous.
+    model: pass the fast model for routine tasks (summary/gaps/compare/
+    contradictions) and leave as None (→ the big default model) only for
+    tasks that genuinely need deeper synthesis, like literature_review.
+
+    max_tokens: defaults to 2048, generous for short structured objects.
+    Pass a higher value (e.g. 3000) for nodes producing longer prose, like
+    literature review.
     """
     messages = [
         {"role": "system", "content": f"{system}\n\nReturn a valid JSON object with this shape:\n{schema_hint}"},
@@ -113,8 +123,9 @@ async def generate_structured_json(
     ]
     raw = await generate_chat_completion(
         messages=messages,
+        model=model,
         response_format={"type": "json_object"},
-        max_tokens=2048,
+        max_tokens=max_tokens,
     )
     if not raw:
         return None
@@ -142,17 +153,20 @@ async def stream_completion(
         logger.warning("stream_completion: no API key — yielding nothing.")
         return
 
-    chosen_model = model or settings.llm_model or "llama-3.3-70b-versatile"
+    chosen_model = model or settings.llm_model or "openai/gpt-oss-120b"
     try:
-        async with client.chat.completions.stream(
+        response = await client.chat.completions.create(
             model=chosen_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-        ) as stream:
-            async for text in stream.text_stream:
-                if text:
-                    yield text
+            stream=True,
+        )
+        async for chunk in response:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta_content = chunk.choices[0].delta.content
+                if delta_content:
+                    yield delta_content
     except Exception as exc:
         logger.error(f"stream_completion failed: {exc}", exc_info=True)
         return

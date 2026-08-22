@@ -42,7 +42,7 @@ async def stream_fast_pipeline(
     logger.info(f"fast_pipeline: starting token stream for intent={intent!r}, papers={min(len(papers), max_papers)}")
     
     token_count = 0
-    async for chunk in stream_completion(messages, model="openai/gpt-oss-20b", max_tokens=600, temperature=0.2):
+    async for chunk in stream_completion(messages, model="qwen/qwen3.6-27b", max_tokens=600, temperature=0.2):
         token_count += 1
         yield chunk
 

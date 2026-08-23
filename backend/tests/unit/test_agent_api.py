@@ -20,14 +20,19 @@ async def test_agent_run_endpoint_streaming():
         yield "Fast "
         yield "insight."
 
-    async def mock_deep_stream(query, intent, workspace_id=None, papers=None):
-        yield {"type": "refining", "stage": "summary", "message": "Synthesizing full corpus"}
-        yield {"type": "completed", "final_text": "## Deep Research Report\nDetailed synthesis", "metrics": {}}
+    async def mock_deep_async(query, intent, workspace_id=None, papers=None):
+        return {
+            "stage": "summary",
+            "stage_message": "Synthesizing full corpus",
+            "final_text": "## Deep Research Report\nDetailed synthesis",
+            "metrics": {},
+            "error": None,
+        }
 
     with (
         patch("app.api.v1.agent.retrieve_node", side_effect=mock_retrieve),
         patch("app.api.v1.agent.stream_fast_pipeline", side_effect=mock_fast_stream),
-        patch("app.api.v1.agent.run_deep_pipeline", side_effect=mock_deep_stream),
+        patch("app.api.v1.agent.run_deep_pipeline_async", side_effect=mock_deep_async),
     ):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:

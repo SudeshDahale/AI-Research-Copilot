@@ -22,13 +22,13 @@ _corpus_cache: dict[str, dict] = {}
 CORPUS_TTL = 1800
 
 
-def _make_key(workspace_id: str, paper_count: int) -> str:
-    return f"corpus:{workspace_id}:{paper_count}"
+def _make_key(workspace_id: str, paper_count: int, paper_fingerprint: str = "") -> str:
+    return f"corpus:{workspace_id}:{paper_count}:{paper_fingerprint}"
 
 
-def get_corpus_cache(workspace_id: str, paper_count: int) -> dict | None:
+def get_corpus_cache(workspace_id: str, paper_count: int, paper_fingerprint: str = "") -> dict | None:
     """Return cached corpus analysis or None on miss/expiry."""
-    key = _make_key(workspace_id, paper_count)
+    key = _make_key(workspace_id, paper_count, paper_fingerprint)
     entry = _corpus_cache.get(key)
     if entry is None:
         return None
@@ -40,9 +40,9 @@ def get_corpus_cache(workspace_id: str, paper_count: int) -> dict | None:
     return entry["data"]
 
 
-def set_corpus_cache(workspace_id: str, paper_count: int, data: dict) -> None:
+def set_corpus_cache(workspace_id: str, paper_count: int, data: dict, paper_fingerprint: str = "") -> None:
     """Store corpus analysis for this workspace snapshot."""
-    key = _make_key(workspace_id, paper_count)
+    key = _make_key(workspace_id, paper_count, paper_fingerprint)
     _corpus_cache[key] = {"data": data, "ts": time.monotonic()}
     logger.info(f"corpus_cache: SET key={key!r}")
 

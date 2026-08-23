@@ -22,12 +22,13 @@ async def gaps_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
     workspace_id = state.get("workspace_id")
+    fingerprint = ",".join(sorted(p.get("id", "") for p in papers))
 
     if not papers:
         return {"result": {"gaps": []}}
 
     if workspace_id:
-        cached = cache.get_corpus_cache(f"{workspace_id}:gaps", len(papers))
+        cached = cache.get_corpus_cache(f"{workspace_id}:gaps", len(papers), fingerprint)
         if cached is not None:
             elapsed = round((time.monotonic() - t0) * 1000)
             existing_metrics = state.get("metrics") or {}
@@ -63,7 +64,7 @@ async def gaps_node(state: AgentState) -> dict:
             },
         ]
     elif workspace_id:
-        cache.set_corpus_cache(f"{workspace_id}:gaps", len(papers), {"gaps": gaps})
+        cache.set_corpus_cache(f"{workspace_id}:gaps", len(papers), {"gaps": gaps}, fingerprint)
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"gaps_node: done in {elapsed}ms papers={len(papers)} gaps={len(gaps)}")

@@ -22,6 +22,7 @@ async def contradiction_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
     workspace_id = state.get("workspace_id")
+    fingerprint = ",".join(sorted(p.get("id", "") for p in papers))
 
     if not papers:
         return {"result": {"contradictions": []}}
@@ -35,7 +36,7 @@ async def contradiction_node(state: AgentState) -> dict:
         }
 
     if workspace_id:
-        cached = cache.get_corpus_cache(f"{workspace_id}:contradictions", len(papers))
+        cached = cache.get_corpus_cache(f"{workspace_id}:contradictions", len(papers), fingerprint)
         if cached is not None:
             elapsed = round((time.monotonic() - t0) * 1000)
             existing_metrics = state.get("metrics") or {}
@@ -52,7 +53,7 @@ async def contradiction_node(state: AgentState) -> dict:
     contradictions = (result or {}).get("contradictions", [])
 
     if workspace_id and contradictions:
-        cache.set_corpus_cache(f"{workspace_id}:contradictions", len(papers), {"contradictions": contradictions})
+        cache.set_corpus_cache(f"{workspace_id}:contradictions", len(papers), {"contradictions": contradictions}, fingerprint)
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(

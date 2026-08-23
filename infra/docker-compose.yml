@@ -69,7 +69,19 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-        
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: arclight-frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://backend:8000/api/v1
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
 
 volumes:
   postgres_data:

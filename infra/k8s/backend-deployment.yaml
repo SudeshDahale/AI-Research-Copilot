@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arclight-backend
+  namespace: default
+  labels:
+    app: arclight-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: arclight-backend
+  template:
+    metadata:
+      labels:
+        app: arclight-backend
+    spec:
+      containers:
+        - name: backend
+          image: arclight-backend:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - secretRef:
+                name: arclight-secrets
+            - configMapRef:
+                name: arclight-config
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /api/v1/healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: arclight-worker
+  namespace: default
+  labels:
+    app: arclight-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: arclight-worker
+  template:
+    metadata:
+      labels:
+        app: arclight-worker
+    spec:
+      containers:
+        - name: worker
+          image: arclight-backend:latest
+          command: ["celery", "-A", "app.workers.celery_app", "worker", "--loglevel=info"]
+          envFrom:
+            - secretRef:
+                name: arclight-secrets
+            - configMapRef:
+                name: arclight-config
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "2Gi"
+              cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: arclight-backend
+  namespace: default
+spec:
+  ports:
+    - port: 8000
+      targetPort: 8000
+  selector:
+    app: arclight-backend

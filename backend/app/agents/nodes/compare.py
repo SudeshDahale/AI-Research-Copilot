@@ -22,6 +22,7 @@ async def compare_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
     workspace_id = state.get("workspace_id")
+    fingerprint = ",".join(sorted(p.get("id", "") for p in papers))
 
     if not papers:
         return {"result": {"comparisons": []}}
@@ -35,7 +36,7 @@ async def compare_node(state: AgentState) -> dict:
         }
 
     if workspace_id:
-        cached = cache.get_corpus_cache(f"{workspace_id}:compare", len(papers))
+        cached = cache.get_corpus_cache(f"{workspace_id}:compare", len(papers), fingerprint)
         if cached is not None:
             elapsed = round((time.monotonic() - t0) * 1000)
             existing_metrics = state.get("metrics") or {}
@@ -55,7 +56,7 @@ async def compare_node(state: AgentState) -> dict:
         logger.warning("compare_node: LLM returned no comparisons")
         comparisons = []
     elif workspace_id:
-        cache.set_corpus_cache(f"{workspace_id}:compare", len(papers), {"comparisons": comparisons})
+        cache.set_corpus_cache(f"{workspace_id}:compare", len(papers), {"comparisons": comparisons}, fingerprint)
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"compare_node: done in {elapsed}ms papers={len(papers)} comparisons={len(comparisons)}")

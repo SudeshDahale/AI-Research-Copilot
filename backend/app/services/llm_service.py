@@ -141,6 +141,8 @@ async def stream_completion(
     model: str | None = None,
     max_tokens: int = 2048,
     temperature: float = 0.3,
+    reasoning_format: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield text token-chunks as they arrive from Groq.
 
@@ -154,14 +156,20 @@ async def stream_completion(
         return
 
     chosen_model = model or settings.llm_model or "openai/gpt-oss-120b"
+    kwargs: dict[str, Any] = {
+        "model": chosen_model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+        "stream": True,
+    }
+    if reasoning_format:
+        kwargs["reasoning_format"] = reasoning_format
+    if reasoning_effort:
+        kwargs["reasoning_effort"] = reasoning_effort
+
     try:
-        response = await client.chat.completions.create(
-            model=chosen_model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            stream=True,
-        )
+        response = await client.chat.completions.create(**kwargs)
         async for chunk in response:
             if chunk.choices and len(chunk.choices) > 0:
                 delta_content = chunk.choices[0].delta.content

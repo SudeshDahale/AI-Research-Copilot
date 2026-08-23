@@ -27,22 +27,44 @@ from app.agents.nodes.retrieve import retrieve_node
 from app.agents.fast_pipeline import stream_fast_pipeline
 from app.agents.deep_pipeline import run_deep_pipeline_async
 from app.agents.router import detect_intent
+from app.services import workspace_service
+from app.db.session import AsyncSessionLocal
+from app.core.rate_limit import RateLimiter
 from app.core.logging import logger
+import uuid
 
 router = APIRouter()
+
+agent_rate_limiter = RateLimiter(requests_per_minute=15, key_prefix="agent_run")
 
 
 def _sse(event: str, data: dict) -> dict:
     return {"event": event, "data": json.dumps(data)}
 
 
-@router.post("/run")
+@router.post("/run", dependencies=[Depends(agent_rate_limiter)])
 async def run_agent(
     body: AgentRunRequest,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     async def event_stream():
         t_start = time.monotonic()
+
+        # ── 0. Workspace Ownership Check (Sprint 9) ──────────────────────────
+        if body.workspace_id:
+            try:
+                ws_uuid = uuid.UUID(body.workspace_id)
+                async with AsyncSessionLocal() as db:
+                    ws = await workspace_service.get_workspace(db, ws_uuid, current_user.id)
+                    if not ws:
+                        yield _sse("error", {
+                            "code": "workspace_not_found",
+                            "message": "Workspace not found or not owned by the current user",
+                        })
+                        return
+            except ValueError:
+                yield _sse("error", {"code": "invalid_workspace_id", "message": "Invalid workspace ID format"})
+                return
 
         # ── 1. Intent classification (fast — rules or small LLM) ─────────────
         try:

@@ -95,9 +95,26 @@ EMBEDDING_DIM=512
 CORS_ORIGINS=http://localhost:5173,http://localhost:8080
 ```
 
+### 2. Quickstart with Docker Compose (Recommended)
+You can run the entire full-stack system (Frontend + Backend + Celery Worker + PostgreSQL/pgvector + Redis) with a single command:
+
+```bash
+# Start all 5 services
+docker compose up --build -d
+
+# View service logs
+docker compose logs -f
+```
+
+- **Frontend Application**: `http://localhost:8080`
+- **Backend API Docs**: `http://localhost:8000/docs`
+- **Health Check**: `http://localhost:8000/api/v1/healthz`
+
 ---
 
-### 2. Set Up and Start the Backend
+### 3. Local Manual Development Setup
+
+#### Backend Setup
 ```bash
 cd backend
 
@@ -106,31 +123,34 @@ python -m venv venv
 venv\Scripts\activate      # Windows
 # source venv/bin/activate # Mac/Linux
 
-# Install dependencies (including pgvector and voyageai)
-pip install -e .
-pip install pgvector voyageai
+# Install dependencies
+pip install -e ".[dev]"
 
 # Run database migrations
 alembic upgrade head
 
 # Start FastAPI server
-python -m uvicorn app.main:app --port 8001 --reload
+uvicorn app.main:app --port 8000 --reload
 ```
 
-- **API base**: `http://localhost:8001/api/v1`
-- **Interactive OpenAPI Documentation**: `http://localhost:8001/docs`
-- **Health check**: `http://localhost:8001/api/v1/healthz`
+- **API base**: `http://localhost:8000/api/v1`
+- **Interactive OpenAPI Documentation**: `http://localhost:8000/docs`
+- **Health check**: `http://localhost:8000/api/v1/healthz`
 
----
+#### Celery Background Worker
+```bash
+cd backend
+celery -A app.workers.celery_app worker --loglevel=info
+```
 
-### 3. Set Up and Start the Frontend
+#### Frontend Setup
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-- **Frontend Application**: `http://localhost:8080` (or `http://localhost:8081`)
+- **Frontend Application**: `http://localhost:8080`
 
 ---
 
@@ -138,78 +158,63 @@ npm run dev
 
 ```
 AI-Research-Copilot/
+├── .github/
+│   └── workflows/
+│       └── ci.yml              # Automated GitHub Actions test & build pipeline
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/
-│   │   │   ├── auth.py             # JWT register & login
-│   │   │   ├── search.py           # Cached multi-source paper search
-│   │   │   ├── workspaces.py       # Workspaces CRUD & paper linking
-│   │   │   ├── papers.py           # Durable paper lookup & pgvector similarity
-│   │   │   └── router.py           # Main API router & healthcheck
+│   │   │   ├── auth.py         # JWT register & login
+│   │   │   ├── search.py       # Cached & rate-limited multi-source paper search
+│   │   │   ├── workspaces.py   # Workspaces CRUD, ownership isolation, & paper linking
+│   │   │   ├── documents.py    # Document generation jobs & durable polling
+│   │   │   ├── agent.py        # Real-time SSE dual-pipeline research agent
+│   │   │   ├── papers.py       # Durable paper lookup & pgvector similarity
+│   │   │   └── router.py       # Main API router & healthcheck
 │   │   ├── core/
-│   │   │   ├── cache.py            # Redis async client & search cache helpers
-│   │   │   ├── config.py           # Pydantic-settings configuration
-│   │   │   ├── logging.py          # Structured stream logs
-│   │   │   └── security.py         # Password hashing & JWT decode
-│   │   ├── db/
-│   │   │   └── session.py          # Async SQLAlchemy engine & session dependency
-│   │   ├── models/
-│   │   │   ├── user.py             # User accounts
-│   │   │   ├── workspace.py        # Workspaces & WorkspacePapers
-│   │   │   └── paper.py            # Durable Paper model with pgvector Vector(512)
-│   │   ├── schemas/
-│   │   │   ├── search.py           # Paper & Search schemas
-│   │   │   └── workspace.py        # Workspace schemas
-│   │   ├── services/
-│   │   │   ├── paper_service.py    # arXiv & Semantic Scholar fetch, merge, dedup
-│   │   │   ├── paper_db_service.py # PostgreSQL paper upsert and retrieval
-│   │   │   ├── ranking_service.py  # Lexical relevance scoring
-│   │   │   ├── vector_service.py   # Voyage AI embedding & pgvector similarity search
-│   │   │   └── workspace_service.py
-│   │   ├── migrations/             # Alembic migration versions
-│   │   └── main.py
-│   ├── alembic.ini
-│   └── pyproject.toml
+│   │   │   ├── cache.py        # Redis async client & search cache helpers
+│   │   │   ├── rate_limit.py   # Sliding-window rate limiter
+│   │   │   └── logging.py      # Structured application logger
+│   │   ├── agents/             # LangGraph research agent graph & nodes
+│   │   ├── workers/            # Celery background workers (generate_document)
+│   │   └── models/             # SQLAlchemy ORM models (User, Workspace, Paper, Document)
+│   ├── tests/
+│   │   ├── unit/               # Unit tests (agent, auth, models, optimizations)
+│   │   └── integration/        # End-to-end full workflow integration tests
+│   └── Dockerfile              # Backend container definition
 ├── frontend/
 │   ├── src/
-│   │   ├── components/             # UI Components
-│   │   ├── routes/
-│   │   │   ├── index.tsx           # Auth login/register
-│   │   │   ├── _app.tsx            # Navigation & AppShell layout
-│   │   │   ├── _app.search.tsx     # Discover — real paper search
-│   │   │   ├── _app.workflow.index.tsx  # Workspaces dashboard
-│   │   │   ├── _app.workflow.$id.tsx    # Workspace view & Agent chat
-│   │   │   ├── _app.papers.$id.tsx      # Paper details & Open PDF
-│   │   │   ├── _app.library.tsx    # Saved library
-│   │   │   └── _app.review.tsx     # Literature review editor
-│   │   └── lib/
-│   │       ├── workspaces.ts       # TanStack Query hooks
-│   │       ├── paper-cache.ts      # Local paper cache
-│   │       └── mock-data.ts
-│   ├── vite.config.ts
-│   └── package.json
-├── Arclight-Implementation-Plan.md
-└── README.md
+│   │   ├── routes/             # TanStack Router pages (search, workflow, review, library)
+│   │   └── components/         # React UI & real-time streaming AgentChat components
+│   └── Dockerfile              # Production multi-stage frontend container
+├── infra/
+│   ├── docker-compose.yml      # Multi-container orchestration
+│   └── k8s/                    # Kubernetes production manifests (Deployments, Services, Ingress)
+└── docker-compose.yml          # Root Docker Compose file
 ```
 
 ---
 
-## API Documentation
-
-All endpoints are prefixed with `/api/v1`.
+## API Reference
 
 | Tag | Method | Endpoint | Description |
 | :--- | :--- | :--- | :--- |
 | **health** | `GET` | `/healthz` | Liveness verification (`{"status": "ok"}`) |
 | **auth** | `POST` | `/auth/register` | Create a new user account |
 | **auth** | `POST` | `/auth/login` | Obtain JWT access token |
-| **search** | `POST` | `/search` | Redis-cached arXiv + Semantic Scholar search |
+| **search** | `POST` | `/search` | Redis-cached & rate-limited arXiv + Semantic Scholar search |
 | **workspaces** | `GET` | `/workspaces` | List current user's workspaces |
 | **workspaces** | `POST` | `/workspaces` | Create a new workspace |
+| **workspaces** | `GET` | `/workspaces/{id}` | Retrieve a single workspace owned by user |
 | **workspaces** | `PUT` | `/workspaces/{id}` | Rename a workspace |
 | **workspaces** | `DELETE` | `/workspaces/{id}` | Delete a workspace |
 | **workspaces** | `POST` | `/workspaces/{id}/papers` | Save papers to workspace & persist to DB |
 | **workspaces** | `DELETE` | `/workspaces/{id}/papers/{paper_id}` | Remove paper from workspace |
+| **workspaces** | `GET` | `/workspaces/{id}/documents` | List generated documents in workspace |
+| **documents** | `POST` | `/documents` | Enqueue background document generation task |
+| **documents** | `GET` | `/documents/{id}` | Poll document generation status and content |
+| **documents** | `DELETE` | `/documents/{id}` | Delete a generated document |
+| **agent** | `POST` | `/agent/run` | Real-time dual-pipeline streaming agent execution (SSE) |
 | **papers** | `GET` | `/papers/{id}` | Fetch a saved durable paper by ID |
 | **papers** | `GET` | `/papers/{id}/similar` | Find semantically similar papers using `pgvector` |
 
@@ -224,8 +229,10 @@ All endpoints are prefixed with `/api/v1`.
 - [x] **Sprint 4: Redis Caching & Search Optimizations** — Redis search caching, durable `Paper` table & upsert
 - [x] **Sprint 5: AI Paper Analysis Schema** — Database columns and models for structured AI analysis
 - [x] **Sprint 6: pgvector Integration & Semantic Search** — Voyage AI embeddings (512-dim), `pgvector` HNSW indexing, and cosine similarity endpoint
-- [ ] **Sprint 7: LangGraph Research Agent** (Planned)
-- [ ] **Sprint 8: Automated Document Generation** (Planned)
+- [x] **Sprint 7: LangGraph Research Agent** — Multi-node research agent graph with fast/deep dual-pipeline orchestration, intent routing, and real-time SSE streaming
+- [x] **Sprint 8: Automated Document Generation** — PostgreSQL-persisted document generation, Celery background worker, durable polling, and workspace document review / export UI
+- [x] **Sprint 9: Auth Hardening & Ownership** — Strict resource-level authorization checks across all workspace and document APIs, and sliding-window rate limiting on `/search` and `/agent/run`
+- [x] **Sprint 10: Testing, Observability & Deployment** — End-to-end integration test suite, GitHub Actions CI workflow, full-stack Docker Compose orchestration, and Kubernetes production manifests
 
 ---
 

@@ -9,12 +9,15 @@ from app.services.paper_service import search_papers
 from app.services.ranking_service import rank_papers
 from app.services import vector_service
 from app.core.cache import cached_search
+from app.core.rate_limit import RateLimiter
 from app.core.logging import logger
 
 router = APIRouter()
 
+search_rate_limiter = RateLimiter(requests_per_minute=30, key_prefix="search")
 
-@router.post("", response_model=list[PaperSchema])
+
+@router.post("", response_model=list[PaperSchema], dependencies=[Depends(search_rate_limiter)])
 async def search(
     payload: SearchRequest,
     db: Annotated[AsyncSession, Depends(get_db)],

@@ -12,6 +12,7 @@ POST /agent/run streams granular SSE events:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Annotated
@@ -24,7 +25,7 @@ from app.models.user import User
 from app.schemas.agent import AgentRunRequest
 from app.agents.nodes.retrieve import retrieve_node
 from app.agents.fast_pipeline import stream_fast_pipeline
-from app.agents.deep_pipeline import run_deep_pipeline
+from app.agents.deep_pipeline import run_deep_pipeline_async
 from app.agents.router import detect_intent
 from app.core.logging import logger
 
@@ -55,7 +56,7 @@ async def run_agent(
             "message": f"Understood as: **{intent.replace('_', ' ').title()}**",
         })
 
-        # ── 2. Paper retrieval ───────────────────────────────────────────────
+        # ── 2. Paper retrieval (runs once, in-memory) ─────────────────────────
         retrieval_state = await retrieve_node({
             "query": body.query,
             "workspace_id": body.workspace_id,
@@ -85,7 +86,17 @@ async def run_agent(
                 yield _sse("error", {"message": error})
             return
 
-        # ── 3. Fast Pipeline: Real-time token streaming (1-2s UX) ───────────
+        # ── 3. Launch Deep Pipeline concurrently (reusing papers in memory) ──
+        deep_task = asyncio.create_task(
+            run_deep_pipeline_async(
+                query=body.query,
+                intent=intent,
+                workspace_id=body.workspace_id,
+                papers=papers,
+            )
+        )
+
+        # ── 4. Fast Pipeline: Stream tokens immediately to client ────────────
         fast_accumulated = []
         try:
             async for token in stream_fast_pipeline(body.query, papers, intent=intent):
@@ -102,31 +113,24 @@ async def run_agent(
             "metrics": {"fast_ms": fast_ms},
         })
 
-        # ── 4. Deep Pipeline: Agent reasoning across full corpus ─────────────
+        # ── 5. Await already-running Deep Pipeline result ─────────────────────
         deep_final_text = ""
         try:
-            async for event in run_deep_pipeline(
-                query=body.query,
-                intent=intent,
-                workspace_id=body.workspace_id,
-                papers=papers,
-            ):
-                if event["type"] == "refining":
-                    yield _sse("refining", {
-                        "stage": event.get("stage"),
-                        "message": event.get("message"),
-                    })
-                elif event["type"] == "completed":
-                    deep_final_text = event.get("final_text") or fast_text
-                    total_ms = round((time.monotonic() - t_start) * 1000)
-                    yield _sse("refined_completed", {
-                        "text": deep_final_text,
-                        "metrics": {**(event.get("metrics") or {}), "total_ms": total_ms},
-                    })
-                elif event["type"] == "error":
-                    logger.warning(f"Deep pipeline returned error: {event.get('message')}")
+            deep_res = await deep_task
+            if deep_res.get("stage_message"):
+                yield _sse("refining", {
+                    "stage": deep_res.get("stage"),
+                    "message": deep_res.get("stage_message"),
+                })
+
+            deep_final_text = deep_res.get("final_text") or fast_text
+            total_ms = round((time.monotonic() - t_start) * 1000)
+            yield _sse("refined_completed", {
+                "text": deep_final_text,
+                "metrics": {**(deep_res.get("metrics") or {}), "total_ms": total_ms},
+            })
         except Exception as exc:
-            logger.error(f"Deep pipeline run error: {exc}", exc_info=True)
+            logger.error(f"Deep pipeline execution error: {exc}", exc_info=True)
 
         # Fallback compatibility event for clients listening to 'completed'
         final_answer = deep_final_text or fast_text

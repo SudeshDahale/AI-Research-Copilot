@@ -332,7 +332,7 @@ async def test_full_graph_empty_workspace():
     """Empty workspace must NOT trigger external search."""
     graph = build_graph()
 
-    with patch("app.db.session.AsyncSessionLocal") as mock_session_cls, \
+    with patch("app.agents.nodes.retrieve.AsyncSessionLocal") as mock_session_cls, \
          patch("app.services.paper_service.search_papers", new_callable=AsyncMock) as mock_search:
 
         # DB returns empty list (no papers in workspace)

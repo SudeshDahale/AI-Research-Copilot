@@ -22,6 +22,7 @@ async def summary_node(state: AgentState) -> dict:
     t0 = time.monotonic()
     papers = (state.get("papers") or [])[:_MAX_PAPERS]
     workspace_id = state.get("workspace_id")
+    fingerprint = ",".join(sorted(p.get("id", "") for p in papers))
 
     if not papers:
         return {
@@ -30,7 +31,7 @@ async def summary_node(state: AgentState) -> dict:
 
     # Cache check — same workspace snapshot + same intent = same answer.
     if workspace_id:
-        cached = cache.get_corpus_cache(f"{workspace_id}:summary", len(papers))
+        cached =         cached = cache.get_corpus_cache(f"{workspace_id}:summary", len(papers), fingerprint)
         if cached is not None:
             elapsed = round((time.monotonic() - t0) * 1000)
             existing_metrics = state.get("metrics") or {}
@@ -52,7 +53,7 @@ async def summary_node(state: AgentState) -> dict:
             "key_findings": ["See individual papers for specific findings."],
         }
     elif workspace_id:
-        cache.set_corpus_cache(f"{workspace_id}:summary", len(papers), result)
+                cache.set_corpus_cache(f"{workspace_id}:summary", len(papers), result, fingerprint)
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"summary_node: done in {elapsed}ms papers={len(papers)}")

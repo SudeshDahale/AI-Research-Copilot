@@ -61,6 +61,26 @@ async def create_workspace(
     return workspace
 
 
+@router.get("/{id}", response_model=WorkspaceOut)
+async def get_workspace(
+    id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> WorkspaceOut:
+    """Retrieve a single workspace owned by the current user."""
+    workspace = await workspace_service.get_workspace(
+        db,
+        workspace_id=id,
+        user_id=current_user.id,
+    )
+    if not workspace:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workspace not found or not owned by the current user",
+        )
+    return workspace
+
+
 @router.put("/{id}", response_model=WorkspaceOut)
 async def rename_workspace(
     id: uuid.UUID,

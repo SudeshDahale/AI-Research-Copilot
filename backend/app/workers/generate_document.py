@@ -15,10 +15,10 @@ from app.agents.graph import agent_graph
 from app.models.document import Document
 
 KIND_TO_TASK = {
-    "Literature review": "lit_review",
-    "Report": "lit_review",
-    "Brief": "lit_review",
-    "Outline": "lit_review",
+    "Literature review": "literature_review",
+    "Report": "literature_review",
+    "Brief": "literature_review",
+    "Outline": "literature_review",
     "Summary": "summary",
 }
 
@@ -43,10 +43,15 @@ async def _generate_async(document_id: str) -> None:
 
         await document_service.mark_processing(db, doc_uuid)
         workspace_id = str(doc.workspace_id)
-        prompt = doc.prompt
-        task = KIND_TO_TASK.get(doc.kind, "lit_review")
+        prompt = doc.prompt or doc.title
+        intent = KIND_TO_TASK.get(doc.kind, "literature_review")
 
-    initial_state = {"query": prompt, "workspace_id": workspace_id, "task": task}
+    initial_state = {
+        "query": prompt,
+        "workspace_id": workspace_id,
+        "intent": intent,
+        "task": intent,
+    }
     final_state = await agent_graph.ainvoke(initial_state)
     final_text = final_state.get("final_text", "")
 

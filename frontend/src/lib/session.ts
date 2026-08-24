@@ -18,11 +18,14 @@ const GUEST_KEY = "arc.guest";
 export async function getSession(): Promise<Session | null> {
   if (typeof window === "undefined") return null;
 
-  const guestRaw = window.sessionStorage.getItem(GUEST_KEY);
+  const guestRaw =
+    window.localStorage.getItem(GUEST_KEY) ||
+    window.sessionStorage.getItem(GUEST_KEY);
   if (guestRaw) {
     try {
       return JSON.parse(guestRaw) as Session;
     } catch {
+      window.localStorage.removeItem(GUEST_KEY);
       window.sessionStorage.removeItem(GUEST_KEY);
     }
   }
@@ -37,6 +40,7 @@ export async function getSession(): Promise<Session | null> {
 
 export function enterAsGuest(): Session {
   const session: Session = { mode: "guest", name: "Guest" };
+  window.localStorage.setItem(GUEST_KEY, JSON.stringify(session));
   window.sessionStorage.setItem(GUEST_KEY, JSON.stringify(session));
   return session;
 }
@@ -70,7 +74,10 @@ export async function loginOrRegister(
 }
 
 export async function clearSession(): Promise<void> {
-  window.sessionStorage.removeItem(GUEST_KEY);
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(GUEST_KEY);
+    window.sessionStorage.removeItem(GUEST_KEY);
+  }
   try {
     await apiFetch("/auth/logout", { method: "POST" });
   } catch {

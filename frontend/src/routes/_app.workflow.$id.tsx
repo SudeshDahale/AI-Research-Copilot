@@ -364,6 +364,7 @@ function WorkspaceDetail() {
               "Compare methodologies",
             ]}
             execute={execute}
+            persistHistory={true}
             renderArtifact={(a) =>
               a.type === "document" ? (
                 <button

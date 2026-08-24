@@ -1,10 +1,10 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate, redirect } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api";
-import { enterAsGuest, loginOrRegister } from "@/lib/session";
+import { enterAsGuest, loginOrRegister, getSession } from "@/lib/session";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -30,6 +30,18 @@ function Landing() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSession().then((session) => {
+      if (!cancelled && session) {
+        navigate({ to: "/search", replace: true });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
 
   const enterAsGuestAndGo = () => {
     enterAsGuest();

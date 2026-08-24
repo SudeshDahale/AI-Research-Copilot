@@ -52,12 +52,19 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Run Database Migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://arclight:arclight@localhost:5432/arclight_test
+        run: |
+          alembic upgrade head
+
       - name: Run Backend Pytest Suite
         working-directory: ./backend
         env:
           DATABASE_URL: postgresql+asyncpg://arclight:arclight@localhost:5432/arclight_test
           REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test-secret-key-for-ci-minimum-32-chars-long
+          JWT_SECRET: test-secret-key-for-ci-minimum-32-chars-long
           GROQ_API_KEY: mock-groq-key-for-ci
         run: |
           pytest tests/ -v

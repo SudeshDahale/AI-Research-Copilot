@@ -68,6 +68,7 @@ export function AgentChat({
   tools = [],
   execute,
   renderArtifact,
+  persistHistory = false,
 }: {
   papers: Paper[];
   scope: string;
@@ -84,10 +85,47 @@ export function AgentChat({
     callbacks?: StreamCallbacks,
   ) => Execution | null;
   renderArtifact?: (a: Artifact) => React.ReactNode;
+  persistHistory?: boolean;
 }) {
-  const [messages, setMessages] = useState<Msg[]>(() =>
-    seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : [],
-  );
+  const storageKey = persistHistory
+    ? `arc.chat.${title.toLowerCase().replace(/[^a-z0-9]/g, "_")}.${scope.toLowerCase().replace(/[^a-z0-9]/g, "_")}`
+    : null;
+
+  const [messages, setMessages] = useState<Msg[]>(() => {
+    if (persistHistory && storageKey && typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (err) {
+        console.warn("Failed to load chat history:", err);
+      }
+    }
+    return seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : [];
+  });
+
+  useEffect(() => {
+    if (persistHistory && storageKey && typeof window !== "undefined") {
+      try {
+        if (messages.length > 0) {
+          localStorage.setItem(storageKey, JSON.stringify(messages));
+        }
+      } catch (err) {
+        console.warn("Failed to save chat history:", err);
+      }
+    }
+  }, [messages, storageKey, persistHistory]);
+
+  const clearChat = () => {
+    if (storageKey && typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {}
+    }
+    setMessages(seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : []);
+  };
   const [input, setInput] = useState("");
   const [running, setRunning] = useState<{
     steps: PlanStep[];
@@ -338,13 +376,22 @@ export function AgentChat({
           </div>
         </div>
         {messages.some((m) => m.role === "user") && (
-          <button
-            onClick={exportTranscript}
-            title="Download full session as Markdown"
-            className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={clearChat}
+              title="Clear conversation"
+              className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-destructive/40 hover:text-destructive cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              onClick={exportTranscript}
+              title="Download full session as Markdown"
+              className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent cursor-pointer"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
+          </div>
         )}
       </div>
 

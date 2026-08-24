@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { FolderKanban, Plus, Trash2, ArrowRight, Sparkles } from "lucide-react";
 import { useWorkspaces } from "@/lib/workspaces";
-import { MOCK_PAPERS } from "@/lib/mock-data";
+import { getCachedPapers } from "@/lib/paper-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -83,7 +83,7 @@ function WorkflowPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {workspaces.map((w) => {
-            const preview = MOCK_PAPERS.filter((p) => w.paperIds.includes(p.id)).slice(0, 3);
+            const preview = getCachedPapers(w.paperIds).slice(0, 3);
             return (
               <div
                 key={w.id}
@@ -112,12 +112,16 @@ function WorkflowPage() {
                     {new Date(w.createdAt).toLocaleDateString()}
                   </p>
                   <ul className="mt-3 space-y-1">
-                    {preview.length ? (
+                    {preview.length > 0 ? (
                       preview.map((p) => (
                         <li key={p.id} className="truncate text-xs text-foreground/70">
                           · {p.title}
                         </li>
                       ))
+                    ) : w.paperIds.length > 0 ? (
+                      <li className="text-xs text-foreground/70">
+                        · {w.paperIds.length} paper{w.paperIds.length === 1 ? "" : "s"} saved
+                      </li>
                     ) : (
                       <li className="text-xs italic text-muted-foreground">Empty — add papers</li>
                     )}

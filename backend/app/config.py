@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # --- Database ---
-    database_url: str = "postgresql+asyncpg://arclight:arclight@localhost:5432/arclight"
+    database_url: str = "postgresql+asyncpg://postgres:password@localhost:5432/arclight"
 
     # --- Redis / Celery ---
     redis_url: str = "redis://localhost:6379/0"

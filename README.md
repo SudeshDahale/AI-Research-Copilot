@@ -18,6 +18,7 @@ An AI-powered research copilot for discovering, curating, and analyzing scientif
 - Full-text search querying live **arXiv** and **Semantic Scholar** APIs.
 - Results are **normalized**, **deduplicated** (by DOI, arXiv ID, or fuzzy title match), and **ranked** by lexical query relevance.
 - Filter results by year range, citation count, venue, and topic tags.
+- **Discover Chat Assistant**: Interactive AI assistant (`POST /api/v1/discover/chat`) to slice candidate papers (`top_n`, NLP-based filter extraction, or instant query search) before creating workspaces.
 - Open-access PDF links (`pdf_url`) allow directly opening original papers in a new tab.
 
 ### 2. Redis Caching & Durable Persistence (Sprint 4)
@@ -215,6 +216,7 @@ AI-Research-Copilot/
 | **documents** | `GET` | `/documents/{id}` | Poll document generation status and content |
 | **documents** | `DELETE` | `/documents/{id}` | Delete a generated document |
 | **agent** | `POST` | `/agent/run` | Real-time dual-pipeline streaming agent execution (SSE) |
+| **discover** | `POST` | `/discover/chat` | Discover-page chat for intent-based filtering, ranking, and corpus scoping |
 | **papers** | `GET` | `/papers/{id}` | Fetch a saved durable paper by ID |
 | **papers** | `GET` | `/papers/{id}/similar` | Find semantically similar papers using `pgvector` |
 

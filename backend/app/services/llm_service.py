@@ -9,22 +9,14 @@ from groq import AsyncGroq
 from app.config import settings
 from app.core.logging import logger
 
-_client: AsyncGroq | None = None
-
-# Conservative timeout: free-tier Groq can be slow under load but should
-# never need more than 30s for structured JSON tasks. Without a timeout,
-# a single slow request can block the entire agent graph indefinitely.
 _GROQ_TIMEOUT = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=5.0)
 
 
 def get_llm_client() -> AsyncGroq | None:
-    global _client
     api_key = settings.groq_api_key or settings.llm_api_key
     if not api_key:
         return None
-    if _client is None:
-        _client = AsyncGroq(api_key=api_key, http_client=httpx.AsyncClient(timeout=_GROQ_TIMEOUT))
-    return _client
+    return AsyncGroq(api_key=api_key, timeout=_GROQ_TIMEOUT)
 
 
 async def generate_chat_completion(

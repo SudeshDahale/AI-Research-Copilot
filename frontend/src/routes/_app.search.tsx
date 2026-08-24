@@ -11,14 +11,13 @@ import {
 } from "lucide-react";
 import { MOCK_PAPERS, type Paper } from "@/lib/mock-data";
 import { type Ranked } from "@/lib/rank";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiStream } from "@/lib/api";
 import { downloadText, slugify, stamp } from "@/lib/download";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { AgentChat } from "@/components/agent/AgentChat";
+import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
 import { AgentSteps } from "@/components/agent/AgentSteps";
 import { searchSteps, workspaceSteps, answerSteps, type Artifact } from "@/lib/agent-plan";
-import { buildAgentReply } from "@/lib/agent";
 import { useWorkspaces, type Workspace } from "@/lib/workspaces";
 import { cachePapers } from "@/lib/paper-cache";
 
@@ -124,19 +123,53 @@ function SearchPage() {
     }
   };
 
-  // Agent task execution for the side chat — plans, runs steps, then acts.
-  const execute = (text: string) => {
-    const q = text.toLowerCase();
+  // Agent task execution for the Discover chat — connects directly to live streaming LangGraph agent
+  const execute = (
+    text: string,
+    toolId: string | null,
+    onProgress: (index: number) => void,
+    callbacks?: StreamCallbacks,
+  ) => {
+    const q = text.toLowerCase().trim();
     const wantsWorkspace =
-      q.includes("workspace") || q.includes("collection") || q.includes("save these");
+      q.includes("workspace") ||
+      q.includes("collection") ||
+      q.includes("save these") ||
+      q.includes("create") ||
+      q.includes("add to workspace");
+
+    const numWords: Record<string, number> = {
+      one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    };
+    const countDigitMatch = q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
+    const countWordMatch = q.match(/\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i);
+    let requestedCount: number | null = null;
+    if (countDigitMatch) requestedCount = parseInt(countDigitMatch[1], 10);
+    else if (countWordMatch) requestedCount = numWords[countWordMatch[1].toLowerCase()];
 
     if (wantsWorkspace) {
-      const picks = results.slice(0, 8);
+      const targetCount = requestedCount && requestedCount > 0 ? requestedCount : (selected.size > 0 ? selected.size : 5);
+      let picks = results.slice(0, targetCount);
+      if (selected.size > 0) {
+        const selectedList = results.filter((p) => selected.has(p.id));
+        if (selectedList.length > 0) {
+          picks = selectedList.slice(0, targetCount);
+        }
+      }
+      const steps = workspaceSteps(active || "Search", picks.length);
       return {
-        steps: workspaceSteps(active, results.length),
+        steps,
         finish: async () => {
-          const name = active.length > 42 ? `${active.slice(0, 42)}…` : active;
-          const ws = await create(name, picks.map((p) => p.id), picks);
+          onProgress(1);
+          let wsName = active || "Curated Workspace";
+          const nameMatch = text.match(/(?:named|called|for|on)\s+["']?([^"'\n,]+)["']?/i);
+          if (nameMatch && nameMatch[1].trim().length > 2 && !nameMatch[1].toLowerCase().includes("paper")) {
+            wsName = nameMatch[1].trim();
+          }
+          if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
+
+          const ws = await create(wsName, picks.map((p) => p.id), picks);
+          onProgress(steps.length);
           const artifact: Artifact = {
             type: "workspace",
             id: ws.id,
@@ -144,19 +177,128 @@ function SearchPage() {
             count: ws.paperIds.length,
           };
           return {
-            text: `Done — I created the workspace **${ws.name}** and scoped it to the ${picks.length} most relevant papers for "${active}".\n\n${picks
-              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal} ${p.year} · ${Math.round(p.score * 100)}% match`)
-              .join("\n")}\n\nOpen it to run deeper, scoped analysis or generate documents.`,
+            text: `Done — I created the workspace **${ws.name}** with the top ${picks.length} most relevant papers for "${active || wsName}":\n\n${picks
+              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year} (${Math.round((p.score || 0) * 100)}% match)`)
+              .join("\n")}\n\nOpen it in Workflow to run deeper, scoped analysis or generate documents.`,
             artifact,
           };
         },
+        live: true,
       };
     }
 
-    return {
-      steps: answerSteps(Math.min(results.length, 40)),
-      finish: () => ({ text: buildAgentReply(text, results.slice(0, 40), `"${active}"`) }),
-    };
+    const isFilterOrTopN =
+      /^(top\s*\d+|\d+\s+(best|most\s+relevant)|filter|only\s+20\d\d|show\s+top)/i.test(q);
+
+    if (isFilterOrTopN) {
+      const steps = [
+        { label: "Filtering candidates", detail: "Applying criteria", ms: 0 },
+        { label: "Refining view", detail: "Updating results", ms: 0 },
+      ];
+      return {
+        steps,
+        finish: async () => {
+          onProgress(1);
+          const candidatePayload = results.slice(0, 50).map((p) => ({
+            id: p.id,
+            title: p.title,
+            authors: p.authors || [],
+            year: p.year || 0,
+            journal: p.journal || "",
+            citations: p.citations || 0,
+            relevance: p.score || 0,
+            abstract: p.abstract || "",
+            tags: p.tags || [],
+            doi: p.doi || "",
+            addedAt: p.addedAt || "Just now",
+            status: p.status || "unread",
+            summary: p.summary || {},
+            gaps: p.gaps || [],
+            future: p.future || [],
+            pdf_url: p.pdfUrl || null,
+          }));
+
+          const res = await apiFetch<{
+            reply: string;
+            papers: any[];
+            action: string;
+          }>("/discover/chat", {
+            method: "POST",
+            body: JSON.stringify({
+              message: text,
+              query: active,
+              candidates: candidatePayload,
+            }),
+          });
+
+          if ((res.action === "top_n" || res.action === "filter") && res.papers?.length) {
+            const mapped = res.papers.map((p: any) => ({
+              ...p,
+              score: p.relevance ?? 0.0,
+              pdfUrl: p.pdf_url,
+            }));
+            setPapers(mapped);
+          }
+          onProgress(2);
+
+          let responseText = res.reply;
+          if (res.papers && res.papers.length > 0) {
+            const listPreview = res.papers
+              .slice(0, 5)
+              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`)
+              .join("\n");
+            responseText += `\n\n${listPreview}`;
+            if (res.papers.length > 5) {
+              responseText += `\n\n*(${res.papers.length - 5} additional papers in view)*`;
+            }
+          }
+          return { text: responseText };
+        },
+        live: true,
+      };
+    }
+
+    // Real live LangGraph dual-pipeline streaming agent
+    const steps = [
+      { label: "Retrieving literature", detail: active ? `Topic: ${active}` : "Searching papers", ms: 0 },
+      { label: "Fast synthesis", detail: "Streaming live tokens", ms: 0 },
+      { label: "Deep reasoning", detail: "Multi-stage research synthesis", ms: 0 },
+    ];
+
+    const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
+      new Promise((resolve, reject) => {
+        let finalText = "";
+        const queryWithContext = active ? `${text} (Topic: ${active})` : text;
+        apiStream("/agent/run", { query: queryWithContext, workspace_id: null }, (event, data) => {
+          if (event === "thinking" || event === "retrieving") {
+            onProgress(1);
+          } else if (event === "token") {
+            onProgress(2);
+            callbacks?.onToken?.(data.chunk ?? "");
+          } else if (event === "fast_completed") {
+            onProgress(2);
+            callbacks?.onFastCompleted?.(data.text ?? "");
+          } else if (event === "refining") {
+            onProgress(2);
+            callbacks?.onRefining?.(data.message ?? "");
+          } else if (event === "refined_completed") {
+            finalText = data.text ?? "";
+            onProgress(3);
+            callbacks?.onRefinedCompleted?.(finalText);
+          } else if (event === "completed") {
+            if (!finalText) finalText = data.text ?? "";
+            onProgress(3);
+            resolve({ text: finalText });
+          } else if (event === "error") {
+            reject(new Error(data.message ?? "Agent execution failed"));
+          }
+        }).catch((err) => {
+          console.error("Live agent stream failed:", err);
+          reject(err);
+        });
+      });
+
+    return { steps, finish: runAgent, live: true };
   };
 
 

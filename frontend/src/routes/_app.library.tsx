@@ -9,11 +9,15 @@ import {
   CheckCircle2,
   Circle,
   FolderPlus,
+  ArrowRight,
 } from "lucide-react";
 import { MOCK_PAPERS, type Paper } from "@/lib/mock-data";
+import { getCachedPapers } from "@/lib/paper-cache";
+import { apiStream } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { AgentChat } from "@/components/agent/AgentChat";
+import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
+import { workspaceSteps, type Artifact } from "@/lib/agent-plan";
 import { useWorkspaces } from "@/lib/workspaces";
 
 export const Route = createFileRoute("/_app/library")({
@@ -36,37 +40,59 @@ function LibraryPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [sort, setSort] = useState<SortKey>("added");
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const { create } = useWorkspaces();
+  const { workspaces, create } = useWorkspaces();
+
+  // Aggregate papers from all user workspaces and local paper cache
+  const libraryPapers = useMemo(() => {
+    const allWsPaperIds = Array.from(new Set(workspaces.flatMap((w) => w.paperIds || [])));
+    const wsPapers = getCachedPapers(allWsPaperIds);
+
+    let cachedMap: Record<string, Paper> = {};
+    try {
+      const stored = localStorage.getItem("arclight-paper-cache");
+      if (stored) cachedMap = JSON.parse(stored);
+    } catch {}
+
+    const map = new Map<string, Paper>();
+    // Baseline seed papers
+    for (const p of MOCK_PAPERS) map.set(p.id, p);
+    // Cached papers from searches
+    for (const p of Object.values(cachedMap)) map.set(p.id, p);
+    // Workspace-curated papers take highest priority
+    for (const p of wsPapers) map.set(p.id, p);
+
+    return Array.from(map.values());
+  }, [workspaces]);
 
   const filtered = useMemo(() => {
     const needle = q.toLowerCase().trim();
-    let rows = MOCK_PAPERS.filter((p) => {
+    let rows = libraryPapers.filter((p) => {
       if (status !== "all" && p.status !== status) return false;
       if (!needle) return true;
       return (
         p.title.toLowerCase().includes(needle) ||
-        p.authors.some((a) => a.toLowerCase().includes(needle)) ||
-        p.journal.toLowerCase().includes(needle) ||
-        p.tags.some((t) => t.toLowerCase().includes(needle))
+        (p.authors || []).some((a) => a.toLowerCase().includes(needle)) ||
+        (p.journal || "").toLowerCase().includes(needle) ||
+        (p.tags || []).some((t) => t.toLowerCase().includes(needle))
       );
     });
     rows = [...rows].sort((a, b) => {
       switch (sort) {
-        case "year": return b.year - a.year;
-        case "citations": return b.citations - a.citations;
-        case "relevance": return b.relevance - a.relevance;
+        case "year": return (b.year || 0) - (a.year || 0);
+        case "citations": return (b.citations || 0) - (a.citations || 0);
+        case "relevance": return (b.relevance || 0) - (a.relevance || 0);
         default: return 0;
       }
     });
     return rows;
-  }, [q, status, sort]);
+  }, [libraryPapers, q, status, sort]);
 
   const counts = useMemo(() => ({
-    all: MOCK_PAPERS.length,
-    unread: MOCK_PAPERS.filter((p) => p.status === "unread").length,
-    reading: MOCK_PAPERS.filter((p) => p.status === "reading").length,
-    read: MOCK_PAPERS.filter((p) => p.status === "read").length,
-  }), []);
+    all: libraryPapers.length,
+    unread: libraryPapers.filter((p) => (p.status || "unread") === "unread").length,
+    reading: libraryPapers.filter((p) => p.status === "reading").length,
+    read: libraryPapers.filter((p) => p.status === "read").length,
+  }), [libraryPapers]);
 
   const toggle = (id: string) => {
     const next = new Set(selected);
@@ -85,8 +111,110 @@ function LibraryPage() {
     alert(`Workspace "${name}" created with ${selected.size} papers. Open it from Workflow.`);
   };
 
-  // Agent scope: filtered library
-  const scopedPapers = filtered.slice(0, 40);
+  // Real live streaming LangGraph agent execution for Library chat
+  const execute = (
+    text: string,
+    toolId: string | null,
+    onProgress: (index: number) => void,
+    callbacks?: StreamCallbacks,
+  ) => {
+    const q = text.toLowerCase().trim();
+    const wantsWorkspace =
+      q.includes("workspace") ||
+      q.includes("collection") ||
+      q.includes("save these") ||
+      q.includes("create") ||
+      q.includes("add to workspace");
+
+    const numWords: Record<string, number> = {
+      one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    };
+    const countDigitMatch = q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
+    const countWordMatch = q.match(/\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i);
+    let requestedCount: number | null = null;
+    if (countDigitMatch) requestedCount = parseInt(countDigitMatch[1], 10);
+    else if (countWordMatch) requestedCount = numWords[countWordMatch[1].toLowerCase()];
+
+    if (wantsWorkspace) {
+      const targetCount = requestedCount && requestedCount > 0 ? requestedCount : (selected.size > 0 ? selected.size : 5);
+      let picks = scopedPapers.slice(0, targetCount);
+      if (selected.size > 0) {
+        const selectedList = scopedPapers.filter((p) => selected.has(p.id));
+        if (selectedList.length > 0) {
+          picks = selectedList.slice(0, targetCount);
+        }
+      }
+      const steps = workspaceSteps("Library", picks.length);
+      return {
+        steps,
+        finish: async () => {
+          onProgress(1);
+          let wsName = `Library Selection · ${new Date().toLocaleDateString()}`;
+          const nameMatch = text.match(/(?:named|called|for|on)\s+["']?([^"'\n,]+)["']?/i);
+          if (nameMatch && nameMatch[1].trim().length > 2 && !nameMatch[1].toLowerCase().includes("paper")) {
+            wsName = nameMatch[1].trim();
+          }
+          if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
+
+          const ws = await create(wsName, picks.map((p) => p.id), picks);
+          onProgress(steps.length);
+          const artifact: Artifact = {
+            type: "workspace",
+            id: ws.id,
+            name: ws.name,
+            count: ws.paperIds.length,
+          };
+          return {
+            text: `Done — I created the workspace **${ws.name}** with ${picks.length} papers from your library:\n\n${picks
+              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`)
+              .join("\n")}\n\nOpen it in Workflow to run deeper analysis or generate documents.`,
+            artifact,
+          };
+        },
+        live: true,
+      };
+    }
+
+    const steps = [
+      { label: "Analyzing library corpus", detail: `${scopedPapers.length} papers`, ms: 0 },
+      { label: "Fast synthesis", detail: "Streaming live tokens", ms: 0 },
+      { label: "Deep reasoning", detail: "Multi-stage research synthesis", ms: 0 },
+    ];
+
+    const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
+      new Promise((resolve, reject) => {
+        let finalText = "";
+        apiStream("/agent/run", { query: `${text} (Scope: user library collection)`, workspace_id: null }, (event, data) => {
+          if (event === "thinking" || event === "retrieving") {
+            onProgress(1);
+          } else if (event === "token") {
+            onProgress(2);
+            callbacks?.onToken?.(data.chunk ?? "");
+          } else if (event === "fast_completed") {
+            onProgress(2);
+            callbacks?.onFastCompleted?.(data.text ?? "");
+          } else if (event === "refining") {
+            onProgress(2);
+            callbacks?.onRefining?.(data.message ?? "");
+          } else if (event === "refined_completed") {
+            finalText = data.text ?? "";
+            onProgress(3);
+            callbacks?.onRefinedCompleted?.(finalText);
+          } else if (event === "completed") {
+            if (!finalText) finalText = data.text ?? "";
+            onProgress(3);
+            resolve({ text: finalText });
+          } else if (event === "error") {
+            reject(new Error(data.message ?? "Agent execution failed"));
+          }
+        }).catch((err) => {
+          console.error("Live agent stream failed:", err);
+          reject(err);
+        });
+      });
+
+    return { steps, finish: runAgent, live: true };
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1400px] px-6 py-8">
@@ -205,6 +333,23 @@ function LibraryPage() {
             title="Library Agent"
             subtitle={`Reading ${scopedPapers.length} of ${counts.all} papers`}
             seedMessage={`I'm scoped to your library (${scopedPapers.length} papers). Ask about themes, gaps, or select papers and turn them into a workspace for deeper analysis.`}
+            execute={execute}
+            renderArtifact={(a) =>
+              a.type === "workspace" ? (
+                <Link to="/workflow/$id" params={{ id: a.id }}>
+                  <div className="card-3d flex items-center gap-2 rounded-lg border border-accent/40 bg-accent/5 px-3 py-2 text-xs hover:border-accent">
+                    <FolderPlus className="h-4 w-4 text-accent" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-medium">{a.name}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {a.count} papers · open workspace
+                      </div>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-accent" />
+                  </div>
+                </Link>
+              ) : null
+            }
           />
         </aside>
       </div>

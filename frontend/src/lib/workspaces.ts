@@ -108,8 +108,21 @@ export function useWorkspaces() {
   });
 
   const create = async (name: string, paperIds: string[] = [], papersData: any[] = []): Promise<Workspace> => {
-    const res = await createMutation.mutateAsync({ name, paperIds, papersData });
-    return mapWorkspace(res);
+    try {
+      const res = await createMutation.mutateAsync({ name, paperIds, papersData });
+      return mapWorkspace(res);
+    } catch (err) {
+      console.warn("Backend workspace creation unavailable, using local workspace fallback:", err);
+      const localId = `ws-${Date.now()}`;
+      const localWs: Workspace = {
+        id: localId,
+        name,
+        paperIds,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      return localWs;
+    }
   };
 
   const rename = async (id: string, name: string): Promise<Workspace> => {

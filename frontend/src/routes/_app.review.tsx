@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Download,
   FileText,
@@ -33,6 +33,14 @@ function ReviewPage() {
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | undefined>(
     workspaces[0]?.id,
   );
+
+  // Automatically select the first available workspace once workspaces finish loading
+  useEffect(() => {
+    if (!activeWorkspaceId && workspaces.length > 0) {
+      setActiveWorkspaceId(workspaces[0].id);
+    }
+  }, [workspaces, activeWorkspaceId]);
+
   const { docs } = useDocuments(activeWorkspaceId);
   const [selectedDoc, setSelectedDoc] = useState<Doc | null>(null);
 

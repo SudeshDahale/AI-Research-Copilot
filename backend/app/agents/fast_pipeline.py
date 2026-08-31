@@ -13,9 +13,12 @@ from app.core.logging import logger
 from app.services.llm_service import stream_completion
 
 
-_FAST_SYSTEM_PROMPT = """You are an ultra-fast scientific research assistant.
-Provide a concise, direct, high-value answer (2–3 short paragraphs or clean bullet points) addressing the user's research query based strictly on the distilled paper insights below.
-Avoid fluff, meta-introductions, or long disclaimers. Prioritize clear takeaways and cite the paper titles/years where relevant."""
+_FAST_SYSTEM_PROMPT = """You are an intelligent, responsive scientific AI research assistant (ChatGPT/Claude style).
+Your goal is to answer the user's specific research query directly, accurately, and comprehensively based on the paper insights provided below.
+- Strictly adhere to any formatting requested: if the user asks for a table, tabular form, or comparison matrix, format the output as a clean, complete Markdown table with clear column headers (| Column 1 | Column 2 | ...).
+- If the user asks for a specific comparison, summary, bullet list, or analysis, provide the answer in that exact requested format.
+- Cite paper titles, authors, and publication years where relevant.
+- Do not add meta-disclaimers or conversational fluff; provide high-value, crisp scientific insights."""
 
 
 async def stream_fast_pipeline(
@@ -45,7 +48,7 @@ async def stream_fast_pipeline(
     async for chunk in stream_completion(
         messages,
         model="qwen/qwen3.6-27b",
-        max_tokens=600,
+        max_tokens=1500,
         temperature=0.2,
         reasoning_format="hidden",
         reasoning_effort="none",

@@ -23,10 +23,11 @@ def detect_intent_rules(query: str) -> str | None:
     if any(re.search(kw, q) for kw in review_keywords):
         return "literature_review"
 
-    # 3. Compare
+    # 3. Compare / Tabular / Matrix
     compare_keywords = [
         r"\bcompare\b", r"\bcomparison\b", r"\bdifferences between\b",
-        r"\bmethodolog(y|ies)\b", r"\bcontrast\b", r"\bvs\b"
+        r"\bmethodolog(y|ies)\b", r"\bcontrast\b", r"\bvs\b",
+        r"\btabl(e|es|ular)\b", r"\bmatrix\b", r"\bgrid\b"
     ]
     if any(re.search(kw, q) for kw in compare_keywords):
         return "compare"

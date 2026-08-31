@@ -10,6 +10,7 @@ import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
 import { DocumentList, DocumentViewer } from "@/components/DocumentPanel";
 import { type Artifact } from "@/lib/agent-plan";
 import { downloadText, slugify, stamp } from "@/lib/download";
+import { buildAgentReply } from "@/lib/agent";
 import { apiStream } from "@/lib/api";
 
 

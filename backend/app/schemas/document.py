@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 DocKind = Literal["Report", "Literature review", "Summary", "Outline", "Brief"]
 
@@ -17,6 +17,8 @@ class DocumentCreate(BaseModel):
 
 
 class DocumentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     workspace_id: uuid.UUID
     title: str
@@ -27,7 +29,4 @@ class DocumentOut(BaseModel):
     words: int
     error: str | None = None
     created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
+    updated_at: datetime

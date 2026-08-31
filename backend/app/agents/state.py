@@ -8,6 +8,11 @@ from __future__ import annotations
 from typing import TypedDict
 
 
+class Cluster(TypedDict, total=False):
+    theme: str
+    paper_ids: list[str]
+
+
 class AgentState(TypedDict, total=False):
     # ── Input ────────────────────────────────────────────────────────────────
     query: str

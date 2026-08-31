@@ -24,6 +24,28 @@ export function buildAgentReply(question: string, papers: Paper[], scope: string
   const years = papers.map((p) => p.year);
   const span = `${Math.min(...years)}–${Math.max(...years)}`;
 
+  if (q.includes("tabl") || q.includes("matrix") || q.includes("grid")) {
+    const rows = papers.slice(0, 6).map((p, i) => {
+      const author = p.authors[0] ?? "Anon";
+      const tag = p.tags[0] ?? "General";
+      return `| [${i + 1}] ${p.title.slice(0, 32)}… | ${author} (${p.year}) | ${tag} | ${p.citations.toLocaleString()} |`;
+    }).join("\n");
+
+    return `## Tabular Analysis — ${scope}
+Analyzed ${papers.length} papers across ${span}.
+
+| Paper Title | Primary Author | Focus Domain | Citations |
+| --- | --- | --- | --- |
+${rows}
+
+### Key Observations
+- **Top Cited Focus:** Clustered around ${topics.slice(0, 3).join(", ") || "Machine Learning"}.
+- **Methodology Span:** Covers empirical benchmarks from ${span}.
+
+### Corpus Analyzed
+${paperList(papers)}`;
+  }
+
   if (q.includes("gap") || q.includes("missing") || q.includes("under")) {
     return `## Research gaps — ${scope}
 Analyzed ${papers.length} papers (${span}).

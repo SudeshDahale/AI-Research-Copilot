@@ -31,7 +31,7 @@ async def summary_node(state: AgentState) -> dict:
 
     # Cache check — same workspace snapshot + same intent = same answer.
     if workspace_id:
-        cached =         cached = cache.get_corpus_cache(f"{workspace_id}:summary", len(papers), fingerprint)
+        cached = cache.get_corpus_cache(f"{workspace_id}:summary", len(papers), fingerprint)
         if cached is not None:
             elapsed = round((time.monotonic() - t0) * 1000)
             existing_metrics = state.get("metrics") or {}

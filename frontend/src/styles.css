@@ -244,7 +244,40 @@
 .agent-md li { margin: 0.15rem 0; }
 .agent-md strong { font-weight: 600; }
 .agent-md code { font-family: var(--font-mono); font-size: 0.85em; background: var(--background); padding: 0 0.25em; border-radius: 3px; }
-.agent-md table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; font-size: 0.75rem; }
-.agent-md th, .agent-md td { border: 1px solid var(--border); padding: 0.25rem 0.4rem; text-align: left; }
-.agent-md th { background: var(--background); font-weight: 600; }
+.agent-md table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  margin: 0.75rem 0;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.agent-md th, .agent-md td {
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+}
+.agent-md th:last-child, .agent-md td:last-child {
+  border-right: none;
+}
+.agent-md tr:last-child td {
+  border-bottom: none;
+}
+.agent-md th {
+  background: var(--muted);
+  color: var(--foreground);
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.agent-md tbody tr:nth-child(even) {
+  background: rgba(125, 125, 125, 0.04);
+}
+.agent-md tbody tr:hover {
+  background: rgba(125, 125, 125, 0.08);
+}
 .agent-md hr { border-color: var(--border); margin: 0.6rem 0; }

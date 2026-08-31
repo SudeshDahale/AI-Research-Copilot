@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class WorkspaceBase(BaseModel):
@@ -31,11 +31,10 @@ class WorkspacePaperAdd(BaseModel):
 
 
 class WorkspaceOut(WorkspaceBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     user_id: uuid.UUID
     paper_ids: list[str]
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

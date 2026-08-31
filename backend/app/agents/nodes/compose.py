@@ -63,11 +63,24 @@ async def compose_node(state: AgentState) -> dict:
             "\n".join(f"- {f}" for f in key_findings) if key_findings else "_None identified_"
         )
 
+        query_text = state.get("query", "").lower()
+        tabular_section = ""
+        if any(w in query_text for w in ("tabl", "matrix", "grid")):
+            table_rows = ["| # | Paper | Year | Key Focus |", "|---|---|---|---|"]
+            for idx, p in enumerate(papers[:10], 1):
+                title = (p.get("title") or "Untitled")[:80].replace("|", "-")
+                year = p.get("year", "?")
+                abstract = p.get("abstract", "")
+                takeaway = (abstract[:110] + "...") if abstract else "Corpus study"
+                table_rows.append(f"| {idx} | {title} | {year} | {takeaway.replace('|', '-')} |")
+            tabular_section = "\n\n### Summary Table\n" + "\n".join(table_rows) + "\n"
+
         text = (
             f"## Research Summary\n\n"
             f"{overview}\n\n"
             f"**Themes:** {themes_md}\n\n"
-            f"### Key Findings\n{findings_md}\n\n"
+            f"### Key Findings\n{findings_md}"
+            f"{tabular_section}\n\n"
             f"### Corpus ({len(papers)} papers)\n{refs}"
         )
 

@@ -145,7 +145,20 @@ async def run_agent(
                     "message": deep_res.get("stage_message"),
                 })
 
-            deep_final_text = deep_res.get("final_text") or fast_text
+            raw_deep_text = deep_res.get("final_text") or ""
+            
+            # If the user asked for a table / custom format and the fast stream delivered it,
+            # preserve the user's requested format instead of overriding with a canned template.
+            query_lower = body.query.lower()
+            wants_table = any(kw in query_lower for kw in ("tabl", "matrix", "grid"))
+            
+            if wants_table and ("|" in fast_text):
+                deep_final_text = fast_text
+            elif intent == "generic" and fast_text and len(fast_text) > 80:
+                deep_final_text = fast_text
+            else:
+                deep_final_text = raw_deep_text or fast_text
+
             total_ms = round((time.monotonic() - t_start) * 1000)
             yield _sse("refined_completed", {
                 "text": deep_final_text,

@@ -16,7 +16,7 @@ async def gap_detection_node(state: AgentState) -> dict:
 
     result = await llm_service.generate_structured_json(
         system=gap_prompts.SYSTEM,
-        prompt=gap_prompts.build_prompt(papers, clusters, corpus_summary),
+        prompt=gap_prompts.build_prompt(papers),
         schema_hint=gap_prompts.SCHEMA_HINT,
     )
     gaps = (result or {}).get("gaps", [])

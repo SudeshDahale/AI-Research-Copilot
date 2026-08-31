@@ -87,6 +87,8 @@ function LibraryPage() {
     return rows;
   }, [libraryPapers, q, status, sort]);
 
+  const scopedPapers = filtered;
+
   const counts = useMemo(() => ({
     all: libraryPapers.length,
     unread: libraryPapers.filter((p) => (p.status || "unread") === "unread").length,
@@ -137,9 +139,9 @@ function LibraryPage() {
 
     if (wantsWorkspace) {
       const targetCount = requestedCount && requestedCount > 0 ? requestedCount : (selected.size > 0 ? selected.size : 5);
-      let picks = scopedPapers.slice(0, targetCount);
+      let picks: Paper[] = scopedPapers.slice(0, targetCount);
       if (selected.size > 0) {
-        const selectedList = scopedPapers.filter((p) => selected.has(p.id));
+        const selectedList = scopedPapers.filter((p: Paper) => selected.has(p.id));
         if (selectedList.length > 0) {
           picks = selectedList.slice(0, targetCount);
         }
@@ -156,7 +158,7 @@ function LibraryPage() {
           }
           if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
 
-          const ws = await create(wsName, picks.map((p) => p.id), picks);
+          const ws = await create(wsName, picks.map((p: Paper) => p.id), picks);
           onProgress(steps.length);
           const artifact: Artifact = {
             type: "workspace",
@@ -166,7 +168,7 @@ function LibraryPage() {
           };
           return {
             text: `Done — I created the workspace **${ws.name}** with ${picks.length} papers from your library:\n\n${picks
-              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`)
+              .map((p: Paper, i: number) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`)
               .join("\n")}\n\nOpen it in Workflow to run deeper analysis or generate documents.`,
             artifact,
           };

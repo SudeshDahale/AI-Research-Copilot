@@ -1,7 +1,6 @@
-"""Celery task: run Sprint 7's agent graph and persist the result to a
-Document row. Runs entirely in the background - the HTTP request that
-enqueued this returns immediately, and the frontend polls GET /documents/{id}
-for status. This is what makes generation survive closing the tab."""
+"""Celery task & Background worker: run agent graph and persist the result to a
+Document row. Runs in background via Celery or FastAPI BackgroundTasks fallback
+so generation survives Redis disconnects and tab closes."""
 from __future__ import annotations
 
 import asyncio
@@ -26,10 +25,29 @@ KIND_TO_TASK = {
 @celery_app.task(name="generate_document", bind=True, max_retries=1)
 def generate_document_task(self, document_id: str) -> None:
     try:
-        asyncio.run(_generate_async(document_id))
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.ensure_future(_generate_async(document_id))
+            else:
+                loop.run_until_complete(_generate_async(document_id))
+        except RuntimeError:
+            asyncio.run(_generate_async(document_id))
     except Exception as exc:
-        logger.error(f"generate_document_task failed for document_id={document_id}: {exc}")
-        asyncio.run(_mark_failed_async(document_id, str(exc)))
+        logger.error(f"generate_document_task failed for document_id={document_id}: {exc}", exc_info=True)
+        try:
+            asyncio.run(_mark_failed_async(document_id, str(exc)))
+        except Exception:
+            pass
+
+
+async def run_document_generation_job(document_id: str) -> None:
+    """Async entrypoint used directly by FastAPI BackgroundTasks when Redis/Celery is offline."""
+    try:
+        await _generate_async(document_id)
+    except Exception as exc:
+        logger.error(f"run_document_generation_job failed for document_id={document_id}: {exc}", exc_info=True)
+        await _mark_failed_async(document_id, str(exc))
 
 
 async def _generate_async(document_id: str) -> None:
@@ -46,20 +64,27 @@ async def _generate_async(document_id: str) -> None:
         prompt = doc.prompt or doc.title
         intent = KIND_TO_TASK.get(doc.kind, "literature_review")
 
-    initial_state = {
-        "query": prompt,
-        "workspace_id": workspace_id,
-        "intent": intent,
-        "task": intent,
-    }
-    final_state = await agent_graph.ainvoke(initial_state)
-    final_text = final_state.get("final_text", "")
+    try:
+        initial_state = {
+            "query": prompt,
+            "workspace_id": workspace_id,
+            "intent": intent,
+            "task": intent,
+        }
+        final_state = await agent_graph.ainvoke(initial_state)
+        final_text = final_state.get("final_text", "")
 
-    async with AsyncSessionLocal() as db:
-        await document_service.mark_done(db, doc_uuid, final_text)
-        logger.info(f"generate_document_task: completed document_id={document_id}")
+        async with AsyncSessionLocal() as db:
+            await document_service.mark_done(db, doc_uuid, final_text)
+            logger.info(f"generate_document_task: completed document_id={document_id}")
+    except Exception as exc:
+        logger.error(f"agent_graph execution failed for document_id={document_id}: {exc}", exc_info=True)
+        await _mark_failed_async(document_id, str(exc))
 
 
 async def _mark_failed_async(document_id: str, error: str) -> None:
-    async with AsyncSessionLocal() as db:
-        await document_service.mark_failed(db, uuid.UUID(document_id), error)
+    try:
+        async with AsyncSessionLocal() as db:
+            await document_service.mark_failed(db, uuid.UUID(document_id), error)
+    except Exception as exc:
+        logger.error(f"Failed to mark document as failed: {exc}")

@@ -26,6 +26,7 @@ async def stream_fast_pipeline(
     papers: list[dict[str, Any]],
     intent: str = "generic",
     max_papers: int = 5,
+    history: list[dict[str, str]] | None = None,
 ) -> AsyncIterator[str]:
     """Stream token chunks for the fast response."""
     t0 = time.monotonic()
@@ -33,8 +34,25 @@ async def stream_fast_pipeline(
     # 1. Distill context (Top 3-5 papers)
     distilled_context = distill_papers_context(papers, max_papers=max_papers)
     
-    # 2. Build concise prompt
-    user_prompt = f"Query: {query}\n\nKey Distilled Papers Context:\n{distilled_context}\n\nSynthesize an immediate, structured answer to the query:"
+    # 2. Build concise prompt with compressed recent history if available
+    history_context = ""
+    if history:
+        formatted = []
+        for msg in history[-4:]:
+            role = "User" if msg.get("role") == "user" else "Assistant"
+            snippet = msg.get("content", "").strip()
+            if len(snippet) > 150:
+                snippet = snippet[:150] + "..."
+            formatted.append(f"{role}: {snippet}")
+        if formatted:
+            history_context = "Recent Conversation Context:\n" + "\n".join(formatted) + "\n\n"
+
+    user_prompt = (
+        f"{history_context}"
+        f"Query: {query}\n\n"
+        f"Key Distilled Papers Context:\n{distilled_context}\n\n"
+        f"Synthesize an immediate, structured answer to the query:"
+    )
     
     messages = [
         {"role": "system", "content": _FAST_SYSTEM_PROMPT},

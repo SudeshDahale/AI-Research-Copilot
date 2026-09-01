@@ -109,19 +109,26 @@ async def run_agent(
             return
 
         # ── 3. Launch Deep Pipeline concurrently (reusing papers in memory) ──
+        history_dicts = [h.model_dump() for h in body.history] if body.history else []
         deep_task = asyncio.create_task(
             run_deep_pipeline_async(
                 query=body.query,
                 intent=intent,
                 workspace_id=body.workspace_id,
                 papers=papers,
+                history=history_dicts,
             )
         )
 
         # ── 4. Fast Pipeline: Stream tokens immediately to client ────────────
         fast_accumulated = []
         try:
-            async for token in stream_fast_pipeline(body.query, papers, intent=intent):
+            async for token in stream_fast_pipeline(
+                body.query,
+                papers,
+                intent=intent,
+                history=history_dicts,
+            ):
                 fast_accumulated.append(token)
                 yield _sse("token", {"chunk": token})
         except Exception as exc:

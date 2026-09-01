@@ -26,7 +26,10 @@ export const Route = createFileRoute("/_app/library")({
       { title: "Library · Arclight" },
       { name: "description", content: "Your saved papers with a live research agent alongside." },
       { property: "og:title", content: "Library · Arclight" },
-      { property: "og:description", content: "Saved papers, searchable, with a scoped research agent." },
+      {
+        property: "og:description",
+        content: "Saved papers, searchable, with a scoped research agent.",
+      },
     ],
   }),
   component: LibraryPage,
@@ -51,7 +54,9 @@ function LibraryPage() {
     try {
       const stored = localStorage.getItem("arclight-paper-cache");
       if (stored) cachedMap = JSON.parse(stored);
-    } catch {}
+    } catch (_err) {
+      // ignore JSON parse error
+    }
 
     const map = new Map<string, Paper>();
     // Baseline seed papers
@@ -78,10 +83,14 @@ function LibraryPage() {
     });
     rows = [...rows].sort((a, b) => {
       switch (sort) {
-        case "year": return (b.year || 0) - (a.year || 0);
-        case "citations": return (b.citations || 0) - (a.citations || 0);
-        case "relevance": return (b.relevance || 0) - (a.relevance || 0);
-        default: return 0;
+        case "year":
+          return (b.year || 0) - (a.year || 0);
+        case "citations":
+          return (b.citations || 0) - (a.citations || 0);
+        case "relevance":
+          return (b.relevance || 0) - (a.relevance || 0);
+        default:
+          return 0;
       }
     });
     return rows;
@@ -89,12 +98,15 @@ function LibraryPage() {
 
   const scopedPapers = filtered;
 
-  const counts = useMemo(() => ({
-    all: libraryPapers.length,
-    unread: libraryPapers.filter((p) => (p.status || "unread") === "unread").length,
-    reading: libraryPapers.filter((p) => p.status === "reading").length,
-    read: libraryPapers.filter((p) => p.status === "read").length,
-  }), [libraryPapers]);
+  const counts = useMemo(
+    () => ({
+      all: libraryPapers.length,
+      unread: libraryPapers.filter((p) => (p.status || "unread") === "unread").length,
+      reading: libraryPapers.filter((p) => p.status === "reading").length,
+      read: libraryPapers.filter((p) => p.status === "read").length,
+    }),
+    [libraryPapers],
+  );
 
   const toggle = (id: string) => {
     const next = new Set(selected);
@@ -105,7 +117,10 @@ function LibraryPage() {
 
   const createWorkspaceFromSelection = () => {
     if (selected.size === 0) return;
-    const name = prompt("Name this workspace:", `Library selection · ${new Date().toLocaleDateString()}`);
+    const name = prompt(
+      "Name this workspace:",
+      `Library selection · ${new Date().toLocaleDateString()}`,
+    );
     if (!name) return;
     const selectedPapers = filtered.filter((p) => selected.has(p.id));
     create(name, [...selected], selectedPapers);
@@ -129,16 +144,33 @@ function LibraryPage() {
       q.includes("add to workspace");
 
     const numWords: Record<string, number> = {
-      one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
     };
-    const countDigitMatch = q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
-    const countWordMatch = q.match(/\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i);
+    const countDigitMatch =
+      q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
+    const countWordMatch = q.match(
+      /\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i,
+    );
     let requestedCount: number | null = null;
     if (countDigitMatch) requestedCount = parseInt(countDigitMatch[1], 10);
     else if (countWordMatch) requestedCount = numWords[countWordMatch[1].toLowerCase()];
 
     if (wantsWorkspace) {
-      const targetCount = requestedCount && requestedCount > 0 ? requestedCount : (selected.size > 0 ? selected.size : 5);
+      const targetCount =
+        requestedCount && requestedCount > 0
+          ? requestedCount
+          : selected.size > 0
+            ? selected.size
+            : 5;
       let picks: Paper[] = scopedPapers.slice(0, targetCount);
       if (selected.size > 0) {
         const selectedList = scopedPapers.filter((p: Paper) => selected.has(p.id));
@@ -153,12 +185,20 @@ function LibraryPage() {
           onProgress(1);
           let wsName = `Library Selection · ${new Date().toLocaleDateString()}`;
           const nameMatch = text.match(/(?:named|called|for|on)\s+["']?([^"'\n,]+)["']?/i);
-          if (nameMatch && nameMatch[1].trim().length > 2 && !nameMatch[1].toLowerCase().includes("paper")) {
+          if (
+            nameMatch &&
+            nameMatch[1].trim().length > 2 &&
+            !nameMatch[1].toLowerCase().includes("paper")
+          ) {
             wsName = nameMatch[1].trim();
           }
           if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
 
-          const ws = await create(wsName, picks.map((p: Paper) => p.id), picks);
+          const ws = await create(
+            wsName,
+            picks.map((p: Paper) => p.id),
+            picks,
+          );
           onProgress(steps.length);
           const artifact: Artifact = {
             type: "workspace",
@@ -168,7 +208,10 @@ function LibraryPage() {
           };
           return {
             text: `Done — I created the workspace **${ws.name}** with ${picks.length} papers from your library:\n\n${picks
-              .map((p: Paper, i: number) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`)
+              .map(
+                (p: Paper, i: number) =>
+                  `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year}`,
+              )
               .join("\n")}\n\nOpen it in Workflow to run deeper analysis or generate documents.`,
             artifact,
           };
@@ -186,30 +229,34 @@ function LibraryPage() {
     const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
       new Promise((resolve, reject) => {
         let finalText = "";
-        apiStream("/agent/run", { query: `${text} (Scope: user library collection)`, workspace_id: null }, (event, data) => {
-          if (event === "thinking" || event === "retrieving") {
-            onProgress(1);
-          } else if (event === "token") {
-            onProgress(2);
-            callbacks?.onToken?.(data.chunk ?? "");
-          } else if (event === "fast_completed") {
-            onProgress(2);
-            callbacks?.onFastCompleted?.(data.text ?? "");
-          } else if (event === "refining") {
-            onProgress(2);
-            callbacks?.onRefining?.(data.message ?? "");
-          } else if (event === "refined_completed") {
-            finalText = data.text ?? "";
-            onProgress(3);
-            callbacks?.onRefinedCompleted?.(finalText);
-          } else if (event === "completed") {
-            if (!finalText) finalText = data.text ?? "";
-            onProgress(3);
-            resolve({ text: finalText });
-          } else if (event === "error") {
-            reject(new Error(data.message ?? "Agent execution failed"));
-          }
-        }).catch((err) => {
+        apiStream(
+          "/agent/run",
+          { query: `${text} (Scope: user library collection)`, workspace_id: null },
+          (event, data) => {
+            if (event === "thinking" || event === "retrieving") {
+              onProgress(1);
+            } else if (event === "token") {
+              onProgress(2);
+              callbacks?.onToken?.(data.chunk ?? "");
+            } else if (event === "fast_completed") {
+              onProgress(2);
+              callbacks?.onFastCompleted?.(data.text ?? "");
+            } else if (event === "refining") {
+              onProgress(2);
+              callbacks?.onRefining?.(data.message ?? "");
+            } else if (event === "refined_completed") {
+              finalText = data.text ?? "";
+              onProgress(3);
+              callbacks?.onRefinedCompleted?.(finalText);
+            } else if (event === "completed") {
+              if (!finalText) finalText = data.text ?? "";
+              onProgress(3);
+              resolve({ text: finalText });
+            } else if (event === "error") {
+              reject(new Error(data.message ?? "Agent execution failed"));
+            }
+          },
+        ).catch((err) => {
           console.error("Live agent stream failed:", err);
           reject(err);
         });
@@ -229,10 +276,14 @@ function LibraryPage() {
         </div>
         <div className="flex items-center gap-2">
           <Link to="/workflow">
-            <Button variant="outline" size="sm" className="btn-pop">Workspaces</Button>
+            <Button variant="outline" size="sm" className="btn-pop">
+              Workspaces
+            </Button>
           </Link>
           <Link to="/search">
-            <Button size="sm" className="btn-pop"><Plus className="mr-1 h-4 w-4" /> Add papers</Button>
+            <Button size="sm" className="btn-pop">
+              <Plus className="mr-1 h-4 w-4" /> Add papers
+            </Button>
           </Link>
         </div>
       </div>
@@ -257,7 +308,9 @@ function LibraryPage() {
                     key={s}
                     onClick={() => setStatus(s)}
                     className={`btn-pop rounded-sm px-2.5 py-1 capitalize transition-colors ${
-                      status === s ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      status === s
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {s} <span className="opacity-60">{counts[s]}</span>
@@ -284,10 +337,19 @@ function LibraryPage() {
               <div className="mt-2 flex items-center justify-between rounded-md bg-primary/5 px-3 py-1.5 text-xs animate-in fade-in slide-in-from-top-1">
                 <span>{selected.size} selected</span>
                 <div className="flex gap-2">
-                  <Button size="sm" className="btn-pop h-7 gap-1" onClick={createWorkspaceFromSelection}>
+                  <Button
+                    size="sm"
+                    className="btn-pop h-7 gap-1"
+                    onClick={createWorkspaceFromSelection}
+                  >
                     <FolderPlus className="h-3.5 w-3.5" /> New workspace
                   </Button>
-                  <Button size="sm" variant="ghost" className="btn-pop h-7" onClick={() => setSelected(new Set())}>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="btn-pop h-7"
+                    onClick={() => setSelected(new Set())}
+                  >
                     Clear
                   </Button>
                 </div>
@@ -308,14 +370,25 @@ function LibraryPage() {
             {filtered.length === 0 ? (
               <div className="py-16 text-center text-sm text-muted-foreground">
                 No papers match.{" "}
-                <button onClick={() => { setQ(""); setStatus("all"); }} className="text-accent underline">
+                <button
+                  onClick={() => {
+                    setQ("");
+                    setStatus("all");
+                  }}
+                  className="text-accent underline"
+                >
                   Reset filters
                 </button>
               </div>
             ) : (
               <ul className="divide-y divide-border">
                 {filtered.slice(0, 200).map((p) => (
-                  <Row key={p.id} paper={p} checked={selected.has(p.id)} onToggle={() => toggle(p.id)} />
+                  <Row
+                    key={p.id}
+                    paper={p}
+                    checked={selected.has(p.id)}
+                    onToggle={() => toggle(p.id)}
+                  />
                 ))}
               </ul>
             )}
@@ -359,10 +432,23 @@ function LibraryPage() {
   );
 }
 
-function Row({ paper, checked, onToggle }: { paper: Paper; checked: boolean; onToggle: () => void }) {
-  const StatusIcon = paper.status === "read" ? CheckCircle2 : paper.status === "reading" ? BookOpen : Circle;
+function Row({
+  paper,
+  checked,
+  onToggle,
+}: {
+  paper: Paper;
+  checked: boolean;
+  onToggle: () => void;
+}) {
+  const StatusIcon =
+    paper.status === "read" ? CheckCircle2 : paper.status === "reading" ? BookOpen : Circle;
   const statusColor =
-    paper.status === "read" ? "text-live" : paper.status === "reading" ? "text-accent" : "text-muted-foreground/60";
+    paper.status === "read"
+      ? "text-live"
+      : paper.status === "reading"
+        ? "text-accent"
+        : "text-muted-foreground/60";
 
   return (
     <li className="group grid grid-cols-[24px_1fr_120px_60px_80px_28px] items-center gap-4 px-3 py-2.5 transition-colors hover:bg-muted/50">
@@ -390,9 +476,15 @@ function Row({ paper, checked, onToggle }: { paper: Paper; checked: boolean; onT
         </div>
       </Link>
 
-      <span className="hidden truncate text-xs text-muted-foreground md:block">{paper.journal}</span>
-      <span className="hidden text-right text-xs tabular-nums text-muted-foreground md:block">{paper.year}</span>
-      <span className="text-right text-xs tabular-nums text-muted-foreground">{paper.citations.toLocaleString()}</span>
+      <span className="hidden truncate text-xs text-muted-foreground md:block">
+        {paper.journal}
+      </span>
+      <span className="hidden text-right text-xs tabular-nums text-muted-foreground md:block">
+        {paper.year}
+      </span>
+      <span className="text-right text-xs tabular-nums text-muted-foreground">
+        {paper.citations.toLocaleString()}
+      </span>
 
       <button
         className="btn-pop rounded p-1 text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground group-hover:opacity-100"

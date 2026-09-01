@@ -44,7 +44,11 @@ export function useWorkspaces() {
 
   // Create workspace mutation
   const createMutation = useMutation({
-    mutationFn: (variables: { name: string; paperIds?: string[]; papersData?: any[] }) =>
+    mutationFn: (variables: {
+      name: string;
+      paperIds?: string[];
+      papersData?: Record<string, unknown>[];
+    }) =>
       apiFetch<BackendWorkspace>("/workspaces", {
         method: "POST",
         body: JSON.stringify({
@@ -83,7 +87,11 @@ export function useWorkspaces() {
 
   // Add papers mutation
   const addPapersMutation = useMutation({
-    mutationFn: (variables: { id: string; paperIds: string[]; papersData?: any[] }) =>
+    mutationFn: (variables: {
+      id: string;
+      paperIds: string[];
+      papersData?: Record<string, unknown>[];
+    }) =>
       apiFetch<BackendWorkspace>(`/workspaces/${variables.id}/papers`, {
         method: "POST",
         body: JSON.stringify({
@@ -107,7 +115,11 @@ export function useWorkspaces() {
     },
   });
 
-  const create = async (name: string, paperIds: string[] = [], papersData: any[] = []): Promise<Workspace> => {
+  const create = async (
+    name: string,
+    paperIds: string[] = [],
+    papersData: Record<string, unknown>[] = [],
+  ): Promise<Workspace> => {
     try {
       const res = await createMutation.mutateAsync({ name, paperIds, papersData });
       return mapWorkspace(res);
@@ -134,7 +146,11 @@ export function useWorkspaces() {
     return removeMutation.mutateAsync(id);
   };
 
-  const addPapers = async (id: string, paperIds: string[], papersData: any[] = []): Promise<Workspace> => {
+  const addPapers = async (
+    id: string,
+    paperIds: string[],
+    papersData: Record<string, unknown>[] = [],
+  ): Promise<Workspace> => {
     const res = await addPapersMutation.mutateAsync({ id, paperIds, papersData });
     return mapWorkspace(res);
   };

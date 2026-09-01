@@ -2,15 +2,15 @@
 
 too much information.
 
-bad ui and colors. 
+bad ui and colors.
 
-No content hierarchy based on relevance and importance. 
+No content hierarchy based on relevance and importance.
 
 No CTA or action oriented
 
-Not optimized for large number of files. 
+Not optimized for large number of files.
 
-Make it scalable, clean UI. 
+Make it scalable, clean UI.
 
 Make it look live but fast.
 

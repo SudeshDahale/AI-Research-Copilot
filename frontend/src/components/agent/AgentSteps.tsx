@@ -62,9 +62,7 @@ export function AgentSteps({
             done ? "text-muted-foreground" : "text-foreground"
           }`}
         >
-          {done
-            ? `Completed ${steps.length} steps`
-            : (steps[idx]?.label ?? "Working") + "…"}
+          {done ? `Completed ${steps.length} steps` : (steps[idx]?.label ?? "Working") + "…"}
         </span>
         <span className="font-mono text-[10px] text-muted-foreground">
           {Math.min(idx + (done ? 0 : 1), steps.length)}/{steps.length}
@@ -105,7 +103,9 @@ export function AgentSteps({
                   >
                     {s.label}
                   </span>
-                  <span className={`block ${lg ? "text-[11px]" : "text-[10px]"} text-muted-foreground`}>
+                  <span
+                    className={`block ${lg ? "text-[11px]" : "text-[10px]"} text-muted-foreground`}
+                  >
                     {state === "pending" ? "queued" : s.detail}
                   </span>
                 </span>

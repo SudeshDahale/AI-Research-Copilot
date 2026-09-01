@@ -3,11 +3,41 @@ import { Database, Network, Activity, Sparkles, ShieldCheck, Check, Loader2 } fr
 import { StreamingText } from "@/components/StreamingText";
 
 const STAGES = [
-  { key: "index", label: "Scanning corpus", detail: "81.4M papers · arXiv, bioRxiv, S2ORC", icon: Database, ms: 550 },
-  { key: "retrieve", label: "Dense retrieval", detail: "SPECTER2 embeddings · top-500", icon: Network, ms: 650 },
-  { key: "graph", label: "Citation graph", detail: "PageRank · +214 neighbors", icon: Activity, ms: 550 },
-  { key: "rank", label: "Reranking with critic", detail: "Cross-encoder · nDCG 0.91", icon: Sparkles, ms: 600 },
-  { key: "verify", label: "Verifying claims", detail: "Retraction-watch · 0 flags", icon: ShieldCheck, ms: 500 },
+  {
+    key: "index",
+    label: "Scanning corpus",
+    detail: "81.4M papers · arXiv, bioRxiv, S2ORC",
+    icon: Database,
+    ms: 550,
+  },
+  {
+    key: "retrieve",
+    label: "Dense retrieval",
+    detail: "SPECTER2 embeddings · top-500",
+    icon: Network,
+    ms: 650,
+  },
+  {
+    key: "graph",
+    label: "Citation graph",
+    detail: "PageRank · +214 neighbors",
+    icon: Activity,
+    ms: 550,
+  },
+  {
+    key: "rank",
+    label: "Reranking with critic",
+    detail: "Cross-encoder · nDCG 0.91",
+    icon: Sparkles,
+    ms: 600,
+  },
+  {
+    key: "verify",
+    label: "Verifying claims",
+    detail: "Retraction-watch · 0 flags",
+    icon: ShieldCheck,
+    ms: 500,
+  },
 ];
 
 export function useSearchPipeline(trigger: unknown) {
@@ -24,7 +54,15 @@ export function useSearchPipeline(trigger: unknown) {
   return { idx, running: idx >= 0 && idx < STAGES.length, done: idx >= STAGES.length };
 }
 
-export function LivePipeline({ stageIdx, results, tone = "search" }: { stageIdx: number; results: number; tone?: "search" | "workspace" }) {
+export function LivePipeline({
+  stageIdx,
+  results,
+  tone = "search",
+}: {
+  stageIdx: number;
+  results: number;
+  tone?: "search" | "workspace";
+}) {
   const done = stageIdx >= STAGES.length;
   const label = tone === "workspace" ? "Workspace agent" : "Autonomous agent";
   return (
@@ -37,7 +75,9 @@ export function LivePipeline({ stageIdx, results, tone = "search" }: { stageIdx:
           </span>
         </div>
         <span className="font-mono text-[10px] text-muted-foreground">
-          {done ? `${results} results` : `stage ${Math.min(stageIdx + 1, STAGES.length)}/${STAGES.length}`}
+          {done
+            ? `${results} results`
+            : `stage ${Math.min(stageIdx + 1, STAGES.length)}/${STAGES.length}`}
         </span>
       </div>
       <ol className="grid grid-cols-1 divide-y divide-border md:grid-cols-5 md:divide-x md:divide-y-0">

@@ -16,11 +16,11 @@ async def test_agent_run_endpoint_streaming():
     async def mock_retrieve(state):
         return {"papers": [{"id": "p1", "title": "Test Paper", "abstract": "Test abstract"}]}
 
-    async def mock_fast_stream(query, papers, intent="generic", max_papers=5):
+    async def mock_fast_stream(query, papers, intent="generic", max_papers=5, **kwargs):
         yield "Fast "
         yield "insight."
 
-    async def mock_deep_async(query, intent, workspace_id=None, papers=None):
+    async def mock_deep_async(query, intent, workspace_id=None, papers=None, **kwargs):
         return {
             "stage": "summary",
             "stage_message": "Synthesizing full corpus",

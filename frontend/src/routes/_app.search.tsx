@@ -21,14 +21,19 @@ import { searchSteps, workspaceSteps, answerSteps, type Artifact } from "@/lib/a
 import { useWorkspaces, type Workspace } from "@/lib/workspaces";
 import { cachePapers } from "@/lib/paper-cache";
 
-
 export const Route = createFileRoute("/_app/search")({
   head: () => ({
     meta: [
       { title: "Discover · Arclight" },
-      { name: "description", content: "Autonomous agentic search across millions of scientific papers." },
+      {
+        name: "description",
+        content: "Autonomous agentic search across millions of scientific papers.",
+      },
       { property: "og:title", content: "Discover · Arclight" },
-      { property: "og:description", content: "Autonomous agentic search across millions of scientific papers." },
+      {
+        property: "og:description",
+        content: "Autonomous agentic search across millions of scientific papers.",
+      },
     ],
   }),
   component: SearchPage,
@@ -41,8 +46,30 @@ const SUGGESTIONS = [
   "autonomous literature review agents",
 ];
 
-const ALL_TAGS = ["RAG", "LLM", "Retrieval", "Graph", "Evaluation", "Agents", "Embeddings", "Benchmark", "Multimodal", "Reasoning"];
-const ALL_VENUES = ["NeurIPS", "ICML", "ICLR", "ACL", "EMNLP", "AAAI", "TACL", "Nature", "Science", "JMLR"];
+const ALL_TAGS = [
+  "RAG",
+  "LLM",
+  "Retrieval",
+  "Graph",
+  "Evaluation",
+  "Agents",
+  "Embeddings",
+  "Benchmark",
+  "Multimodal",
+  "Reasoning",
+];
+const ALL_VENUES = [
+  "NeurIPS",
+  "ICML",
+  "ICLR",
+  "ACL",
+  "EMNLP",
+  "AAAI",
+  "TACL",
+  "Nature",
+  "Science",
+  "JMLR",
+];
 
 function SearchPage() {
   const [query, setQuery] = useState("");
@@ -61,7 +88,6 @@ function SearchPage() {
   const [papers, setPapers] = useState<Ranked[]>([]);
   const [apiLoading, setApiLoading] = useState(false);
   const [timersDone, setTimersDone] = useState(false);
-
 
   // selection for workspace
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -85,7 +111,6 @@ function SearchPage() {
     return ranked;
   }, [active, papers, yearRange, minCites, selectedTags, selectedVenues, sort]);
 
-
   useEffect(() => setSelected(new Set()), [active]);
 
   useEffect(() => {
@@ -104,11 +129,11 @@ function SearchPage() {
     setRunId((n) => n + 1);
 
     try {
-      const data = await apiFetch<Paper[]>("/search", {
+      const data = await apiFetch<(Paper & { relevance?: number; pdf_url?: string })[]>("/search", {
         method: "POST",
         body: JSON.stringify({ query: q }),
       });
-      const mapped = data.map((p: any) => ({
+      const mapped = data.map((p) => ({
         ...p,
         score: p.relevance ?? 0.0,
         pdfUrl: p.pdf_url,
@@ -129,6 +154,7 @@ function SearchPage() {
     toolId: string | null,
     onProgress: (index: number) => void,
     callbacks?: StreamCallbacks,
+    history?: { role: "user" | "assistant"; content: string }[],
   ) => {
     const q = text.toLowerCase().trim();
     const wantsWorkspace =
@@ -139,16 +165,33 @@ function SearchPage() {
       q.includes("add to workspace");
 
     const numWords: Record<string, number> = {
-      one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+      one: 1,
+      two: 2,
+      three: 3,
+      four: 4,
+      five: 5,
+      six: 6,
+      seven: 7,
+      eight: 8,
+      nine: 9,
+      ten: 10,
     };
-    const countDigitMatch = q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
-    const countWordMatch = q.match(/\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i);
+    const countDigitMatch =
+      q.match(/\b(\d+)\s*(?:papers?|results?|items?)?\b/i) || q.match(/\b(?:top|first)\s*(\d+)\b/i);
+    const countWordMatch = q.match(
+      /\b(?:first\s+|top\s+)?(one|two|three|four|five|six|seven|eight|nine|ten)\s+papers?\b/i,
+    );
     let requestedCount: number | null = null;
     if (countDigitMatch) requestedCount = parseInt(countDigitMatch[1], 10);
     else if (countWordMatch) requestedCount = numWords[countWordMatch[1].toLowerCase()];
 
     if (wantsWorkspace) {
-      const targetCount = requestedCount && requestedCount > 0 ? requestedCount : (selected.size > 0 ? selected.size : 5);
+      const targetCount =
+        requestedCount && requestedCount > 0
+          ? requestedCount
+          : selected.size > 0
+            ? selected.size
+            : 5;
       let picks = results.slice(0, targetCount);
       if (selected.size > 0) {
         const selectedList = results.filter((p) => selected.has(p.id));
@@ -163,12 +206,20 @@ function SearchPage() {
           onProgress(1);
           let wsName = active || "Curated Workspace";
           const nameMatch = text.match(/(?:named|called|for|on)\s+["']?([^"'\n,]+)["']?/i);
-          if (nameMatch && nameMatch[1].trim().length > 2 && !nameMatch[1].toLowerCase().includes("paper")) {
+          if (
+            nameMatch &&
+            nameMatch[1].trim().length > 2 &&
+            !nameMatch[1].toLowerCase().includes("paper")
+          ) {
             wsName = nameMatch[1].trim();
           }
           if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
 
-          const ws = await create(wsName, picks.map((p) => p.id), picks);
+          const ws = await create(
+            wsName,
+            picks.map((p) => p.id),
+            picks,
+          );
           onProgress(steps.length);
           const artifact: Artifact = {
             type: "workspace",
@@ -178,8 +229,13 @@ function SearchPage() {
           };
           return {
             text: `Done — I created the workspace **${ws.name}** with the top ${picks.length} most relevant papers for "${active || wsName}":\n\n${picks
-              .map((p, i) => `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year} (${Math.round((p.score || 0) * 100)}% match)`)
-              .join("\n")}\n\nOpen it in Workflow to run deeper, scoped analysis or generate documents.`,
+              .map(
+                (p, i) =>
+                  `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year} (${Math.round((p.score || 0) * 100)}% match)`,
+              )
+              .join(
+                "\n",
+              )}\n\nOpen it in Workflow to run deeper, scoped analysis or generate documents.`,
             artifact,
           };
         },
@@ -220,7 +276,7 @@ function SearchPage() {
 
           const res = await apiFetch<{
             reply: string;
-            papers: any[];
+            papers: (Paper & { relevance?: number; pdf_url?: string })[];
             action: string;
           }>("/discover/chat", {
             method: "POST",
@@ -232,7 +288,7 @@ function SearchPage() {
           });
 
           if ((res.action === "top_n" || res.action === "filter") && res.papers?.length) {
-            const mapped = res.papers.map((p: any) => ({
+            const mapped = res.papers.map((p) => ({
               ...p,
               score: p.relevance ?? 0.0,
               pdfUrl: p.pdf_url,
@@ -260,7 +316,11 @@ function SearchPage() {
 
     // Real live LangGraph dual-pipeline streaming agent
     const steps = [
-      { label: "Retrieving literature", detail: active ? `Topic: ${active}` : "Searching papers", ms: 0 },
+      {
+        label: "Retrieving literature",
+        detail: active ? `Topic: ${active}` : "Searching papers",
+        ms: 0,
+      },
       { label: "Fast synthesis", detail: "Streaming live tokens", ms: 0 },
       { label: "Deep reasoning", detail: "Multi-stage research synthesis", ms: 0 },
     ];
@@ -269,30 +329,34 @@ function SearchPage() {
       new Promise((resolve, reject) => {
         let finalText = "";
         const queryWithContext = active ? `${text} (Topic: ${active})` : text;
-        apiStream("/agent/run", { query: queryWithContext, workspace_id: null }, (event, data) => {
-          if (event === "thinking" || event === "retrieving") {
-            onProgress(1);
-          } else if (event === "token") {
-            onProgress(2);
-            callbacks?.onToken?.(data.chunk ?? "");
-          } else if (event === "fast_completed") {
-            onProgress(2);
-            callbacks?.onFastCompleted?.(data.text ?? "");
-          } else if (event === "refining") {
-            onProgress(2);
-            callbacks?.onRefining?.(data.message ?? "");
-          } else if (event === "refined_completed") {
-            finalText = data.text ?? "";
-            onProgress(3);
-            callbacks?.onRefinedCompleted?.(finalText);
-          } else if (event === "completed") {
-            if (!finalText) finalText = data.text ?? "";
-            onProgress(3);
-            resolve({ text: finalText });
-          } else if (event === "error") {
-            reject(new Error(data.message ?? "Agent execution failed"));
-          }
-        }).catch((err) => {
+        apiStream(
+          "/agent/run",
+          { query: queryWithContext, workspace_id: null, history: history || [] },
+          (event, data) => {
+            if (event === "thinking" || event === "retrieving") {
+              onProgress(1);
+            } else if (event === "token") {
+              onProgress(2);
+              callbacks?.onToken?.(data.chunk ?? "");
+            } else if (event === "fast_completed") {
+              onProgress(2);
+              callbacks?.onFastCompleted?.(data.text ?? "");
+            } else if (event === "refining") {
+              onProgress(2);
+              callbacks?.onRefining?.(data.message ?? "");
+            } else if (event === "refined_completed") {
+              finalText = data.text ?? "";
+              onProgress(3);
+              callbacks?.onRefinedCompleted?.(finalText);
+            } else if (event === "completed") {
+              if (!finalText) finalText = data.text ?? "";
+              onProgress(3);
+              resolve({ text: finalText });
+            } else if (event === "error") {
+              reject(new Error(data.message ?? "Agent execution failed"));
+            }
+          },
+        ).catch((err) => {
           console.error("Live agent stream failed:", err);
           reject(err);
         });
@@ -300,7 +364,6 @@ function SearchPage() {
 
     return { steps, finish: runAgent, live: true };
   };
-
 
   const toggle = (arr: string[], v: string) =>
     arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
@@ -327,7 +390,9 @@ function SearchPage() {
       const ws = await create(name, [...selected], selectedPapers);
       setSelected(new Set());
       setWsPickerOpen(false);
-      alert(`Workspace "${ws.name}" created with ${ws.paperIds.length} papers. Open it in Workflow.`);
+      alert(
+        `Workspace "${ws.name}" created with ${ws.paperIds.length} papers. Open it in Workflow.`,
+      );
     } catch (err) {
       console.error("Failed to create workspace:", err);
     }
@@ -344,8 +409,8 @@ function SearchPage() {
             </div>
             <h1 className="font-display text-5xl leading-tight">What are you researching?</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Type your topic below. Arclight ranks the most similar papers, you pick the ones that matter,
-              and the agent works only on those.
+              Type your topic below. Arclight ranks the most similar papers, you pick the ones that
+              matter, and the agent works only on those.
             </p>
             <ol className="mx-auto mt-6 grid max-w-xl gap-2 text-left sm:grid-cols-3">
               {[
@@ -365,8 +430,6 @@ function SearchPage() {
             </ol>
           </div>
         )}
-
-
 
         <form
           onSubmit={(e) => {
@@ -569,102 +632,111 @@ function SearchPage() {
               </div>
             ) : (
               <>
-            {!searching && (
-
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span>
-                  <span className="font-medium text-foreground">{results.length.toLocaleString()}</span>{" "}
-                  papers ranked by similarity to <span className="text-foreground">"{active}"</span>
-                  {selected.size === 0 && results.length > 0 && (
-                    <span className="ml-2 rounded-full bg-accent/10 px-2 py-0.5 text-accent">
-                      Tick the papers you want → add to a workspace
+                {!searching && (
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>
+                      <span className="font-medium text-foreground">
+                        {results.length.toLocaleString()}
+                      </span>{" "}
+                      papers ranked by similarity to{" "}
+                      <span className="text-foreground">"{active}"</span>
+                      {selected.size === 0 && results.length > 0 && (
+                        <span className="ml-2 rounded-full bg-accent/10 px-2 py-0.5 text-accent">
+                          Tick the papers you want → add to a workspace
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-                <button
-                  onClick={() =>
-                    downloadText(
-                      `${slugify(active)}-results-${stamp()}.txt`,
-                      `# Ranked results — "${active}"\n\n_${results.length} papers · exported ${stamp()}_\n\n` +
-                        results
-                          .slice(0, 40)
-                          .map(
-                            (p, i) =>
-                              `${i + 1}. **${p.title}** — ${p.authors.join(", ")}. *${p.journal}* (${p.year}). ${p.citations} citations. Match ${Math.round(p.score * 100)}%.`,
-                          )
-                          .join("\n"),
-                    )
-                  }
-                  className="btn-pop rounded-md border border-border bg-card px-2 py-1 hover:border-accent hover:text-accent"
-                >
-                  Export list
-                </button>
-              </div>
-            )}
+                    <button
+                      onClick={() =>
+                        downloadText(
+                          `${slugify(active)}-results-${stamp()}.txt`,
+                          `# Ranked results — "${active}"\n\n_${results.length} papers · exported ${stamp()}_\n\n` +
+                            results
+                              .slice(0, 40)
+                              .map(
+                                (p, i) =>
+                                  `${i + 1}. **${p.title}** — ${p.authors.join(", ")}. *${p.journal}* (${p.year}). ${p.citations} citations. Match ${Math.round(p.score * 100)}%.`,
+                              )
+                              .join("\n"),
+                        )
+                      }
+                      className="btn-pop rounded-md border border-border bg-card px-2 py-1 hover:border-accent hover:text-accent"
+                    >
+                      Export list
+                    </button>
+                  </div>
+                )}
 
-
-            {/* CTA — bulk workspace */}
-            {selected.size > 0 && (
-              <div className="card-3d mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs animate-in fade-in slide-in-from-top-1">
-                <span>
-                  <span className="font-medium text-foreground">{selected.size}</span> papers selected — scope the agent to just these:
-                </span>
-                <div className="relative flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    className="btn-pop h-8 gap-1"
-                    onClick={() => setWsPickerOpen((v) => !v)}
-                  >
-                    <FolderPlus className="h-3.5 w-3.5" /> Add to workspace
-                  </Button>
-                  <Button size="sm" variant="ghost" className="btn-pop h-8" onClick={() => setSelected(new Set())}>
-                    Clear
-                  </Button>
-
-                  {wsPickerOpen && (
-                    <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-border bg-popover p-2 shadow-xl animate-in fade-in zoom-in-95">
-                      <button
-                        onClick={createWorkspaceFromSelection}
-                        className="btn-pop flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                {/* CTA — bulk workspace */}
+                {selected.size > 0 && (
+                  <div className="card-3d mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-2 text-xs animate-in fade-in slide-in-from-top-1">
+                    <span>
+                      <span className="font-medium text-foreground">{selected.size}</span> papers
+                      selected — scope the agent to just these:
+                    </span>
+                    <div className="relative flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        className="btn-pop h-8 gap-1"
+                        onClick={() => setWsPickerOpen((v) => !v)}
                       >
-                        <Plus className="h-3.5 w-3.5" /> Create new workspace…
-                      </button>
-                      {workspaces.length > 0 && (
-                        <>
-                          <div className="mt-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                            Existing
-                          </div>
-                          <div className="max-h-56 overflow-y-auto">
-                            {workspaces.map((w) => (
-                              <button
-                                key={w.id}
-                                onClick={() => addSelectedTo(w)}
-                                className="btn-pop flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-                              >
-                                <span className="truncate">{w.name}</span>
-                                <span className="text-[10px] text-muted-foreground">{w.paperIds.length}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </>
+                        <FolderPlus className="h-3.5 w-3.5" /> Add to workspace
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="btn-pop h-8"
+                        onClick={() => setSelected(new Set())}
+                      >
+                        Clear
+                      </Button>
+
+                      {wsPickerOpen && (
+                        <div className="absolute right-0 top-9 z-20 w-64 rounded-lg border border-border bg-popover p-2 shadow-xl animate-in fade-in zoom-in-95">
+                          <button
+                            onClick={createWorkspaceFromSelection}
+                            className="btn-pop flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                          >
+                            <Plus className="h-3.5 w-3.5" /> Create new workspace…
+                          </button>
+                          {workspaces.length > 0 && (
+                            <>
+                              <div className="mt-1 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                Existing
+                              </div>
+                              <div className="max-h-56 overflow-y-auto">
+                                {workspaces.map((w) => (
+                                  <button
+                                    key={w.id}
+                                    onClick={() => addSelectedTo(w)}
+                                    className="btn-pop flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                                  >
+                                    <span className="truncate">{w.name}</span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                      {w.paperIds.length}
+                                    </span>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                </div>
-              </div>
-            )}
+                  </div>
+                )}
 
-            <ul className="mt-3 card-3d overflow-hidden rounded-xl border border-border bg-card">
-              {results.slice(0, 40).map((p, i) => (
-                <ResultRow
-                  key={p.id}
-                  paper={p}
-                  rank={i + 1}
-                  checked={selected.has(p.id)}
-                  onToggle={() => toggleSelect(p.id)}
-                />
-              ))}
-            </ul>
+                <ul className="mt-3 card-3d overflow-hidden rounded-xl border border-border bg-card">
+                  {results.slice(0, 40).map((p, i) => (
+                    <ResultRow
+                      key={p.id}
+                      paper={p}
+                      rank={i + 1}
+                      checked={selected.has(p.id)}
+                      onToggle={() => toggleSelect(p.id)}
+                    />
+                  ))}
+                </ul>
               </>
             )}
           </section>
@@ -702,7 +774,6 @@ function SearchPage() {
                 ) : null
               }
             />
-
           </aside>
         </div>
       )}
@@ -718,7 +789,6 @@ function FilterBlock({ label, children }: { label: string; children: React.React
     </div>
   );
 }
-
 
 function ResultRow({
   paper,

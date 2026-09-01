@@ -19,8 +19,7 @@ export async function getSession(): Promise<Session | null> {
   if (typeof window === "undefined") return null;
 
   const guestRaw =
-    window.localStorage.getItem(GUEST_KEY) ||
-    window.sessionStorage.getItem(GUEST_KEY);
+    window.localStorage.getItem(GUEST_KEY) || window.sessionStorage.getItem(GUEST_KEY);
   if (guestRaw) {
     try {
       return JSON.parse(guestRaw) as Session;

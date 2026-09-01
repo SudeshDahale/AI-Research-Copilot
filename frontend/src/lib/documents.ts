@@ -16,7 +16,20 @@ export type Doc = {
   error?: string | null;
 };
 
-function mapDoc(raw: any): Doc {
+export type BackendDoc = {
+  id: string;
+  workspace_id: string;
+  title: string;
+  kind: Doc["kind"];
+  prompt: string;
+  content: string;
+  created_at: string;
+  words: number;
+  status: DocStatus;
+  error?: string | null;
+};
+
+function mapDoc(raw: BackendDoc): Doc {
   return {
     id: raw.id,
     workspaceId: raw.workspace_id,
@@ -44,7 +57,7 @@ export function useDocuments(workspaceId?: string) {
   const refresh = useCallback(async () => {
     if (!workspaceId) return;
     try {
-      const raw = await apiFetch<any[]>(`/workspaces/${workspaceId}/documents`);
+      const raw = await apiFetch<BackendDoc[]>(`/workspaces/${workspaceId}/documents`);
       setDocs(raw.map(mapDoc));
     } catch (err) {
       console.error("Failed to load documents:", err);
@@ -71,8 +84,13 @@ export function useDocuments(workspaceId?: string) {
   }, [docs, refresh]);
 
   const create = useCallback(
-    async (doc: { workspaceId: string; title: string; kind: Doc["kind"]; prompt: string }): Promise<Doc> => {
-      const raw = await apiFetch<any>("/documents", {
+    async (doc: {
+      workspaceId: string;
+      title: string;
+      kind: Doc["kind"];
+      prompt: string;
+    }): Promise<Doc> => {
+      const raw = await apiFetch<BackendDoc>("/documents", {
         method: "POST",
         body: JSON.stringify({
           workspace_id: doc.workspaceId,

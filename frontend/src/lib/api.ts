@@ -61,7 +61,7 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 export async function apiStream(
   path: string,
   body: unknown,
-  onEvent: (event: string, data: any) => void,
+  onEvent: (event: string, data: unknown) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",

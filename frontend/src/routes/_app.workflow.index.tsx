@@ -12,7 +12,10 @@ export const Route = createFileRoute("/_app/workflow/")({
       { title: "Workspaces · Arclight" },
       { name: "description", content: "Manage your curated research workspaces." },
       { property: "og:title", content: "Workspaces · Arclight" },
-      { property: "og:description", content: "Scoped agent analysis on curated paper collections." },
+      {
+        property: "og:description",
+        content: "Scoped agent analysis on curated paper collections.",
+      },
     ],
   }),
   component: WorkflowPage,
@@ -44,7 +47,8 @@ function WorkflowPage() {
           </div>
           <h1 className="font-display text-4xl">Workspaces</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Curate papers into workspaces. The agent analyzes only what's inside — sharper, deeper, specific.
+            Curate papers into workspaces. The agent analyzes only what's inside — sharper, deeper,
+            specific.
           </p>
         </div>
       </div>
@@ -72,7 +76,8 @@ function WorkflowPage() {
           </div>
           <h2 className="font-display text-2xl">No workspaces yet</h2>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            Start by searching in Discover, then add the papers that matter into a named workspace. The agent will focus only on those.
+            Start by searching in Discover, then add the papers that matter into a named workspace.
+            The agent will focus only on those.
           </p>
           <Link to="/search" className="mt-4 inline-block">
             <Button className="btn-pop gap-1">
@@ -127,7 +132,8 @@ function WorkflowPage() {
                     )}
                   </ul>
                   <div className="mt-4 flex items-center gap-1 text-xs font-medium text-accent">
-                    Open workspace <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
+                    Open workspace{" "}
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-1" />
                   </div>
                 </Link>
               </div>

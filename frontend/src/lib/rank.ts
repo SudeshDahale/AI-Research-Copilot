@@ -1,8 +1,33 @@
 import type { Paper } from "@/lib/mock-data";
 
 const STOP = new Set([
-  "the","a","an","of","in","on","for","and","or","to","with","using","via","how","what",
-  "is","are","be","by","at","from","about","research","paper","papers","study","studies",
+  "the",
+  "a",
+  "an",
+  "of",
+  "in",
+  "on",
+  "for",
+  "and",
+  "or",
+  "to",
+  "with",
+  "using",
+  "via",
+  "how",
+  "what",
+  "is",
+  "are",
+  "be",
+  "by",
+  "at",
+  "from",
+  "about",
+  "research",
+  "paper",
+  "papers",
+  "study",
+  "studies",
 ]);
 
 export function tokenize(s: string): string[] {

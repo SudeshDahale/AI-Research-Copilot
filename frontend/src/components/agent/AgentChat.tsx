@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   Bot,
   Send,
@@ -14,20 +15,17 @@ import {
   Zap,
   BrainCircuit,
   Loader2,
+  BookOpen,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Input } from "@/components/ui/input";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import type { Paper } from "@/lib/mock-data";
 import { buildAgentReply, AGENT_TASKS } from "@/lib/agent";
 import { downloadText, slugify, stamp } from "@/lib/download";
 import { AgentSteps } from "@/components/agent/AgentSteps";
-import {
-  answerSteps,
-  detectIntent,
-  type Artifact,
-  type PlanStep,
-} from "@/lib/agent-plan";
+import { answerSteps, detectIntent, type Artifact, type PlanStep } from "@/lib/agent-plan";
 
 export type ChatTool = { id: string; label: string; icon?: typeof FileText };
 
@@ -40,7 +38,8 @@ export type StreamCallbacks = {
 
 export type Execution = {
   steps: PlanStep[];
-  finish: () => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>;
+  finish: () =>
+    { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>;
   /** When true, AgentSteps shows real progress instead of animating on a timer. */
   live?: boolean;
 };
@@ -83,6 +82,7 @@ export function AgentChat({
     toolId: string | null,
     onProgress: (index: number) => void,
     callbacks?: StreamCallbacks,
+    history?: { role: "user" | "assistant"; content: string }[],
   ) => Execution | null;
   renderArtifact?: (a: Artifact) => React.ReactNode;
   persistHistory?: boolean;
@@ -122,9 +122,13 @@ export function AgentChat({
     if (storageKey && typeof window !== "undefined") {
       try {
         localStorage.removeItem(storageKey);
-      } catch {}
+      } catch (_err) {
+        // ignore storage errors
+      }
     }
-    setMessages(seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : []);
+    setMessages(
+      seedMessage ? [{ id: crypto.randomUUID(), role: "assistant", text: seedMessage }] : [],
+    );
   };
   const [input, setInput] = useState("");
   const [running, setRunning] = useState<{
@@ -134,7 +138,10 @@ export function AgentChat({
     live?: boolean;
   } | null>(null);
   const [liveIndex, setLiveIndex] = useState(0);
-  const finishRef = useRef<(() => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>) | null>(null);
+  const finishRef = useRef<
+    | (() => { text: string; artifact?: Artifact } | Promise<{ text: string; artifact?: Artifact }>)
+    | null
+  >(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<ChatTool | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -169,7 +176,7 @@ export function AgentChat({
     if (!text || busy) return;
     const toolId = activeTool?.id ?? null;
     const tag = activeTool?.label;
-    
+
     setMessages((m) => [...m, { id: crypto.randomUUID(), role: "user", text, tag }]);
     setInput("");
     setMenuOpen(false);
@@ -272,11 +279,24 @@ export function AgentChat({
       },
     };
 
-    const run: Execution =
-      execute?.(text, toolId, setLiveIndex, streamCallbacks) ?? {
-        steps: answerSteps(papers.length),
-        finish: () => ({ text: buildAgentReply(text, papers, scope) }),
-      };
+    const conversationHistory = messages
+      .filter((m) => m.text && m.text.trim())
+      .slice(-6)
+      .map((m) => ({
+        role: m.role,
+        content: m.text,
+      }));
+
+    const run: Execution = execute?.(
+      text,
+      toolId,
+      setLiveIndex,
+      streamCallbacks,
+      conversationHistory,
+    ) ?? {
+      steps: answerSteps(papers.length),
+      finish: () => ({ text: buildAgentReply(text, papers, scope) }),
+    };
 
     setRunning({ steps: run.steps, prompt: text, tag, live: run.live });
 
@@ -310,14 +330,20 @@ export function AgentChat({
             },
           ];
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
+        const errorMsg =
+          err instanceof Error
+            ? err.message
+            : typeof err === "object" && err !== null && "message" in err
+              ? String((err as { message: unknown }).message)
+              : "Failed to complete agent run.";
         setRunning(null);
         setMessages((m) => [
           ...m,
           {
             id: crypto.randomUUID(),
             role: "assistant",
-            text: `⚠️ Agent execution error: ${err.message || "Failed to complete agent run."}`,
+            text: `⚠️ Agent execution error: ${errorMsg}`,
             prompt: text,
             steps: run.steps,
           },
@@ -354,7 +380,7 @@ export function AgentChat({
     downloadText(
       `${slugify(scope)}-agent-session-${stamp()}.txt`,
       `# ${title} — ${scope}\n\n_${papers.length} papers · exported ${stamp()}_\n${body}`,
-      "text/plain"
+      "text/plain",
     );
   };
 
@@ -372,7 +398,8 @@ export function AgentChat({
             <Sparkles className="h-3 w-3 text-accent" />
           </div>
           <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="live-dot" /> {subtitle ?? `Analyzing ${papers.length} papers in ${scope}`}
+            <span className="live-dot" />{" "}
+            {subtitle ?? `Analyzing ${papers.length} papers in ${scope}`}
           </div>
         </div>
         {messages.some((m) => m.role === "user") && (
@@ -403,27 +430,36 @@ export function AgentChat({
           </div>
         )}
         {messages.map((m) => (
-          <ChatBubble key={m.id} msg={m} scope={scope} renderArtifact={renderArtifact} />
+          <ChatBubble
+            key={m.id}
+            msg={m}
+            papers={papers}
+            scope={scope}
+            renderArtifact={renderArtifact}
+          />
         ))}
-        {running && !messages.some((m) => m.role === "assistant" && (m.status === "streaming" || m.status === "refining")) && (
-          <div className="flex gap-2">
-            <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
-              <Bot className="h-3 w-3" />
+        {running &&
+          !messages.some(
+            (m) => m.role === "assistant" && (m.status === "streaming" || m.status === "refining"),
+          ) && (
+            <div className="flex gap-2">
+              <div className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary text-primary-foreground">
+                <Bot className="h-3 w-3" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <AgentSteps
+                  steps={running.steps}
+                  onDone={completeRun}
+                  liveIndex={running.live ? liveIndex : undefined}
+                />
+                {thinkingTooLong && (
+                  <p className="mt-2 text-[11px] text-muted-foreground animate-pulse">
+                    ⏳ Still thinking — Groq inference can take a moment on free tier…
+                  </p>
+                )}
+              </div>
             </div>
-            <div className="min-w-0 flex-1">
-              <AgentSteps
-                steps={running.steps}
-                onDone={completeRun}
-                liveIndex={running.live ? liveIndex : undefined}
-              />
-              {thinkingTooLong && (
-                <p className="mt-2 text-[11px] text-muted-foreground animate-pulse">
-                  ⏳ Still thinking — Groq inference can take a moment on free tier…
-                </p>
-              )}
-            </div>
-          </div>
-        )}
+          )}
         <div ref={endRef} />
       </div>
 
@@ -512,7 +548,9 @@ export function AgentChat({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={
-                activeTool ? `Describe the ${activeTool.label.toLowerCase()}…` : `Ask about ${scope}…`
+                activeTool
+                  ? `Describe the ${activeTool.label.toLowerCase()}…`
+                  : `Ask about ${scope}…`
               }
               className="h-10 pr-10 text-sm"
               disabled={busy}
@@ -531,12 +569,187 @@ export function AgentChat({
   );
 }
 
+function CitationBadge({ index, paper }: { index: number; paper?: Paper }) {
+  if (!paper) {
+    return (
+      <span className="mx-0.5 inline-flex items-center justify-center rounded border border-border bg-muted/80 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+        [{index}]
+      </span>
+    );
+  }
+
+  return (
+    <HoverCard openDelay={150} closeDelay={150}>
+      <HoverCardTrigger asChild>
+        <Link
+          to="/papers/$id"
+          params={{ id: paper.id }}
+          className="mx-0.5 inline-flex cursor-pointer items-center gap-0.5 rounded-md border border-accent/30 bg-accent/15 px-1.5 py-0.5 align-baseline text-[11px] font-medium text-accent no-underline transition-colors hover:bg-accent hover:text-accent-foreground"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <BookOpen className="inline h-2.5 w-2.5" />
+          <span>[{index}]</span>
+        </Link>
+      </HoverCardTrigger>
+      <HoverCardContent
+        align="start"
+        className="z-50 w-80 space-y-1.5 border border-border bg-popover p-3.5 text-left text-popover-foreground shadow-xl"
+      >
+        <div className="flex items-center justify-between gap-2 text-[10px] font-medium text-muted-foreground">
+          <span className="truncate">
+            {paper.journal || "ArXiv"} · {paper.year}
+          </span>
+          <span>{paper.citations.toLocaleString()} cites</span>
+        </div>
+        <h4 className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">
+          {paper.title}
+        </h4>
+        <p className="line-clamp-3 text-[11px] leading-normal text-muted-foreground">
+          {paper.abstract}
+        </p>
+        <div className="mt-2 flex items-center justify-between border-t border-border pt-1">
+          <span className="font-mono text-[10px] text-accent/90">
+            {paper.authors?.[0] || "Unknown"} {paper.authors?.length > 1 ? "et al." : ""}
+          </span>
+          <Link
+            to="/papers/$id"
+            params={{ id: paper.id }}
+            className="flex items-center gap-0.5 text-[10px] font-medium text-accent hover:underline"
+          >
+            View Paper <ArrowRight className="h-2.5 w-2.5" />
+          </Link>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
+
+function TableContainer({ children }: { children: React.ReactNode }) {
+  const [copiedType, setCopiedType] = useState<"csv" | "md" | null>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+
+  const copyTable = (format: "csv" | "md") => {
+    if (!tableRef.current) return;
+    const tableEl = tableRef.current.querySelector("table");
+    if (!tableEl) return;
+
+    if (format === "csv") {
+      const rows = Array.from(tableEl.querySelectorAll("tr"));
+      const csvContent = rows
+        .map((row) => {
+          const cells = Array.from(row.querySelectorAll("th, td"));
+          return cells
+            .map((cell) => {
+              const text = (cell.textContent || "").trim().replace(/"/g, '""');
+              return `"${text}"`;
+            })
+            .join(",");
+        })
+        .join("\n");
+
+      navigator.clipboard?.writeText(csvContent);
+    } else {
+      const rows = Array.from(tableEl.querySelectorAll("tr"));
+      const headerRow = rows[0];
+      if (!headerRow) return;
+
+      const headerCells = Array.from(headerRow.querySelectorAll("th, td")).map((c) =>
+        (c.textContent || "").trim(),
+      );
+      const divider = headerCells.map(() => "---");
+      const bodyRows = rows
+        .slice(1)
+        .map((row) =>
+          Array.from(row.querySelectorAll("th, td")).map((c) => (c.textContent || "").trim()),
+        );
+
+      const mdTable = [
+        `| ${headerCells.join(" | ")} |`,
+        `| ${divider.join(" | ")} |`,
+        ...bodyRows.map((r) => `| ${r.join(" | ")} |`),
+      ].join("\n");
+
+      navigator.clipboard?.writeText(mdTable);
+    }
+
+    setCopiedType(format);
+    setTimeout(() => setCopiedType(null), 1500);
+  };
+
+  return (
+    <div className="group/table relative my-3 overflow-hidden rounded-lg border border-border bg-card/60">
+      <div className="flex items-center justify-between border-b border-border/60 bg-muted/40 px-3 py-1.5 text-[10px] font-medium text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <FileText className="h-3 w-3 text-accent" /> Comparison Matrix / Table
+        </span>
+        <div className="flex items-center gap-1.5 opacity-80 transition-opacity group-hover/table:opacity-100">
+          <button
+            type="button"
+            onClick={() => copyTable("csv")}
+            className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-background/80 px-1.5 py-0.5 text-[10px] text-foreground hover:bg-accent hover:text-accent-foreground"
+            title="Copy table formatted as CSV"
+          >
+            {copiedType === "csv" ? (
+              <Check className="h-2.5 w-2.5 text-emerald-500" />
+            ) : (
+              <Copy className="h-2.5 w-2.5" />
+            )}
+            {copiedType === "csv" ? "CSV Copied" : "Copy CSV"}
+          </button>
+          <button
+            type="button"
+            onClick={() => copyTable("md")}
+            className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-background/80 px-1.5 py-0.5 text-[10px] text-foreground hover:bg-accent hover:text-accent-foreground"
+            title="Copy table formatted as Markdown"
+          >
+            {copiedType === "md" ? (
+              <Check className="h-2.5 w-2.5 text-emerald-500" />
+            ) : (
+              <Copy className="h-2.5 w-2.5" />
+            )}
+            {copiedType === "md" ? "MD Copied" : "Copy MD"}
+          </button>
+        </div>
+      </div>
+      <div ref={tableRef} className="overflow-x-auto p-1 text-xs">
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function parseCitationsInNode(children: React.ReactNode, papers: Paper[]): React.ReactNode {
+  if (typeof children === "string") {
+    const parts = children.split(/(\[\d+\])/g);
+    if (parts.length === 1) return children;
+
+    return parts.map((part, i) => {
+      const match = part.match(/^\[(\d+)\]$/);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        return <CitationBadge key={i} index={num} paper={papers[num - 1]} />;
+      }
+      return part;
+    });
+  }
+
+  if (Array.isArray(children)) {
+    return children.map((child, i) => (
+      <React.Fragment key={i}>{parseCitationsInNode(child, papers)}</React.Fragment>
+    ));
+  }
+
+  return children;
+}
+
 function ChatBubble({
   msg,
+  papers = [],
   scope,
   renderArtifact,
 }: {
   msg: Msg;
+  papers?: Paper[];
   scope: string;
   renderArtifact?: (a: Artifact) => React.ReactNode;
 }) {
@@ -561,17 +774,18 @@ function ChatBubble({
           </div>
         )}
 
-        {!isUser && (msg.status === "streaming" || msg.status === "refining" || msg.status === "fast") && (
-          <div className="mb-1.5 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
-              <Zap className="h-2.5 w-2.5" /> Fast Insight
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary animate-pulse">
-              <Loader2 className="h-2.5 w-2.5 animate-spin" />
-              {msg.refiningStage || "Deep Agent Refining in background..."}
-            </span>
-          </div>
-        )}
+        {!isUser &&
+          (msg.status === "streaming" || msg.status === "refining" || msg.status === "fast") && (
+            <div className="mb-1.5 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-500">
+                <Zap className="h-2.5 w-2.5" /> Fast Insight
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary animate-pulse">
+                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                {msg.refiningStage || "Deep Agent Refining in background..."}
+              </span>
+            </div>
+          )}
 
         {!isUser && msg.status === "refined" && (
           <div className="mb-1.5 flex items-center gap-2">
@@ -594,7 +808,25 @@ function ChatBubble({
             msg.text
           ) : (
             <div className="agent-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text || "…"}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  table: ({ children }) => (
+                    <TableContainer>
+                      <table>{children}</table>
+                    </TableContainer>
+                  ),
+                  p: ({ children }) => <p>{parseCitationsInNode(children, papers)}</p>,
+                  li: ({ children }) => <li>{parseCitationsInNode(children, papers)}</li>,
+                  td: ({ children }) => <td>{parseCitationsInNode(children, papers)}</td>,
+                  th: ({ children }) => <th>{parseCitationsInNode(children, papers)}</th>,
+                  strong: ({ children }) => (
+                    <strong>{parseCitationsInNode(children, papers)}</strong>
+                  ),
+                }}
+              >
+                {msg.text || "…"}
+              </ReactMarkdown>
             </div>
           )}
         </div>
@@ -605,7 +837,11 @@ function ChatBubble({
           <div className="mt-1 flex items-center gap-1">
             <button
               onClick={() => {
-                downloadText(`${slugify(msg.prompt!)}-${slugify(scope)}-${stamp()}.txt`, msg.text, "text/plain");
+                downloadText(
+                  `${slugify(msg.prompt!)}-${slugify(scope)}-${stamp()}.txt`,
+                  msg.text,
+                  "text/plain",
+                );
               }}
               className="btn-pop inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent"
             >

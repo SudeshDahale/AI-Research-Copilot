@@ -28,13 +28,17 @@ export function getCachedPapers(ids: string[]): Paper[] {
   try {
     const existingStr = localStorage.getItem("arclight-paper-cache");
     const existing: Record<string, Paper> = existingStr ? JSON.parse(existingStr) : {};
-    
-    return ids.map((id) => {
-      return memoryCache[id] || existing[id] || MOCK_PAPERS.find(p => p.id === id);
-    }).filter(Boolean) as Paper[];
+
+    return ids
+      .map((id) => {
+        return memoryCache[id] || existing[id] || MOCK_PAPERS.find((p) => p.id === id);
+      })
+      .filter(Boolean) as Paper[];
   } catch (err) {
     console.warn("Failed to read paper cache", err);
-    return ids.map(id => memoryCache[id] || MOCK_PAPERS.find(p => p.id === id)).filter(Boolean) as Paper[];
+    return ids
+      .map((id) => memoryCache[id] || MOCK_PAPERS.find((p) => p.id === id))
+      .filter(Boolean) as Paper[];
   }
 }
 
@@ -42,7 +46,7 @@ export function searchCachedPapers(query: string, excludeIds: string[] = []): Pa
   try {
     const existingStr = localStorage.getItem("arclight-paper-cache");
     const existing: Record<string, Paper> = existingStr ? JSON.parse(existingStr) : {};
-    
+
     // Combine mock papers and cached papers
     const allPapers = { ...existing };
     for (const p of MOCK_PAPERS) {
@@ -52,19 +56,20 @@ export function searchCachedPapers(query: string, excludeIds: string[] = []): Pa
       if (!allPapers[p.id]) allPapers[p.id] = p;
     }
 
-    const available = Object.values(allPapers).filter(p => !excludeIds.includes(p.id));
+    const available = Object.values(allPapers).filter((p) => !excludeIds.includes(p.id));
     const needle = query.toLowerCase().trim();
-    
+
     if (!needle) return available.slice(0, 20);
-    
+
     return available
-      .filter((p) => 
-        p.title.toLowerCase().includes(needle) || 
-        p.abstract.toLowerCase().includes(needle) ||
-        p.tags?.some(t => t.toLowerCase().includes(needle))
+      .filter(
+        (p) =>
+          p.title.toLowerCase().includes(needle) ||
+          p.abstract.toLowerCase().includes(needle) ||
+          p.tags?.some((t) => t.toLowerCase().includes(needle)),
       )
       .slice(0, 20);
   } catch {
-    return MOCK_PAPERS.filter(p => !excludeIds.includes(p.id)).slice(0, 20);
+    return MOCK_PAPERS.filter((p) => !excludeIds.includes(p.id)).slice(0, 20);
   }
 }

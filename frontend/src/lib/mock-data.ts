@@ -44,8 +44,10 @@ const BASE: Paper[] = [
       methodology:
         "Two-stage pipeline: dense retrieval over S2ORC embeddings, followed by claim-level verification using a critic model fine-tuned on 120k annotated examples.",
       dataset: "S2ORC (81M papers), SciFact, and a new benchmark SciSynth-5k.",
-      results: "34% reduction in factual hallucinations vs. GPT-4 + RAG; F1 improved from 0.71 to 0.83.",
-      limitations: "Retrieval latency scales linearly with corpus size; critic drifts on non-STEM fields.",
+      results:
+        "34% reduction in factual hallucinations vs. GPT-4 + RAG; F1 improved from 0.71 to 0.83.",
+      limitations:
+        "Retrieval latency scales linearly with corpus size; critic drifts on non-STEM fields.",
     },
     gaps: [
       "No evaluation on non-English scientific literature.",
@@ -72,7 +74,8 @@ const BASE: Paper[] = [
     status: "unread",
     summary: {
       objective: "Automate the full literature review pipeline from query to draft.",
-      methodology: "Multi-agent orchestration with planner, retrieval, extraction, and drafting agents.",
+      methodology:
+        "Multi-agent orchestration with planner, retrieval, extraction, and drafting agents.",
       dataset: "Custom LitReview-Bench of 1,200 human-written reviews across 8 domains.",
       results: "Human evaluators rated drafts within 0.4 points of PhD-authored reviews.",
       limitations: "High token cost per review (~$4.20); struggles with niche subfields.",
@@ -119,8 +122,10 @@ const BASE: Paper[] = [
     addedAt: "3 days ago",
     status: "unread",
     summary: {
-      objective: "Standardize evaluation of factual grounding in AI-generated scientific summaries.",
-      methodology: "Annotated 8,400 model outputs by domain experts with atomic-fact decomposition.",
+      objective:
+        "Standardize evaluation of factual grounding in AI-generated scientific summaries.",
+      methodology:
+        "Annotated 8,400 model outputs by domain experts with atomic-fact decomposition.",
       dataset: "SciFact-Long, BioASQ, custom PhysSum-2k.",
       results: "Frontier LLMs fabricate 11–18% of atomic scientific claims in long summaries.",
       limitations: "Human annotation is expensive; not fully reproducible.",
@@ -179,11 +184,33 @@ const BASE: Paper[] = [
 ];
 
 // Expand to a scalable-looking library
-const JOURNALS = ["NeurIPS", "ICML", "ICLR", "ACL", "EMNLP", "AAAI", "TACL", "Nature", "Science", "JMLR"];
+const JOURNALS = [
+  "NeurIPS",
+  "ICML",
+  "ICLR",
+  "ACL",
+  "EMNLP",
+  "AAAI",
+  "TACL",
+  "Nature",
+  "Science",
+  "JMLR",
+];
 const AUTHORS_POOL = [
-  "L. Chen", "M. Rossi", "K. Ahmed", "T. Yamada", "P. Silva",
-  "R. Novak", "S. Patel", "H. Park", "F. Dubois", "N. Weiss",
-  "J. Cohan", "E. Marchetti", "Y. Tanaka", "A. Okafor",
+  "L. Chen",
+  "M. Rossi",
+  "K. Ahmed",
+  "T. Yamada",
+  "P. Silva",
+  "R. Novak",
+  "S. Patel",
+  "H. Park",
+  "F. Dubois",
+  "N. Weiss",
+  "J. Cohan",
+  "E. Marchetti",
+  "Y. Tanaka",
+  "A. Okafor",
 ];
 const TITLE_TEMPLATES = [
   "Scaling laws for {topic} in scientific corpora",
@@ -198,11 +225,31 @@ const TITLE_TEMPLATES = [
   "Robust {topic} under distribution shift",
 ];
 const TOPICS = [
-  "citation retrieval", "claim verification", "abstract generation", "entity linking",
-  "long-context reasoning", "cross-lingual retrieval", "peer review", "figure understanding",
-  "table extraction", "temporal reasoning", "knowledge grounding", "counterfactual synthesis",
+  "citation retrieval",
+  "claim verification",
+  "abstract generation",
+  "entity linking",
+  "long-context reasoning",
+  "cross-lingual retrieval",
+  "peer review",
+  "figure understanding",
+  "table extraction",
+  "temporal reasoning",
+  "knowledge grounding",
+  "counterfactual synthesis",
 ];
-const TAGS_POOL = ["RAG", "LLM", "Retrieval", "Graph", "Evaluation", "Agents", "Embeddings", "Benchmark", "Multimodal", "Reasoning"];
+const TAGS_POOL = [
+  "RAG",
+  "LLM",
+  "Retrieval",
+  "Graph",
+  "Evaluation",
+  "Agents",
+  "Embeddings",
+  "Benchmark",
+  "Multimodal",
+  "Reasoning",
+];
 
 function seeded(i: number) {
   const x = Math.sin(i * 9301 + 49297) * 233280;
@@ -215,17 +262,26 @@ function makeExtra(i: number): Paper {
   const title = tpl.replace("{topic}", topic);
   const year = 2019 + Math.floor(seeded(i + 1) * 8);
   const nAuthors = 2 + Math.floor(seeded(i + 2) * 3);
-  const authors = Array.from({ length: nAuthors }, (_, k) =>
-    AUTHORS_POOL[(i * 3 + k) % AUTHORS_POOL.length],
+  const authors = Array.from(
+    { length: nAuthors },
+    (_, k) => AUTHORS_POOL[(i * 3 + k) % AUTHORS_POOL.length],
   );
   const nTags = 1 + Math.floor(seeded(i + 4) * 3);
-  const tags = Array.from(new Set(Array.from({ length: nTags }, (_, k) =>
-    TAGS_POOL[(i + k * 2) % TAGS_POOL.length],
-  )));
+  const tags = Array.from(
+    new Set(Array.from({ length: nTags }, (_, k) => TAGS_POOL[(i + k * 2) % TAGS_POOL.length])),
+  );
   const citations = Math.floor(seeded(i + 5) * 1200);
   const relevance = 0.6 + seeded(i + 6) * 0.35;
   const status: Paper["status"] = ["unread", "reading", "read"][i % 3] as Paper["status"];
-  const added = ["2m ago", "1h ago", "yesterday", "3 days ago", "1 week ago", "2 weeks ago", "1 month ago"][i % 7];
+  const added = [
+    "2m ago",
+    "1h ago",
+    "yesterday",
+    "3 days ago",
+    "1 week ago",
+    "2 weeks ago",
+    "1 month ago",
+  ][i % 7];
   return {
     id: `syn-${String(i).padStart(4, "0")}`,
     title,
@@ -265,10 +321,34 @@ export type Project = {
 };
 
 export const MOCK_PROJECTS: Project[] = [
-  { id: "p1", title: "Hallucination-aware AI for scientific synthesis", updated: "2 min ago", papers: 6, status: "Drafting" },
-  { id: "p2", title: "Autonomous agents for clinical trial design", updated: "yesterday", papers: 14, status: "Review" },
-  { id: "p3", title: "Graph neural retrieval for legal precedent", updated: "3 days ago", papers: 22, status: "Archived" },
-  { id: "p4", title: "Multimodal foundation models for radiology", updated: "1 week ago", papers: 31, status: "Review" },
+  {
+    id: "p1",
+    title: "Hallucination-aware AI for scientific synthesis",
+    updated: "2 min ago",
+    papers: 6,
+    status: "Drafting",
+  },
+  {
+    id: "p2",
+    title: "Autonomous agents for clinical trial design",
+    updated: "yesterday",
+    papers: 14,
+    status: "Review",
+  },
+  {
+    id: "p3",
+    title: "Graph neural retrieval for legal precedent",
+    updated: "3 days ago",
+    papers: 22,
+    status: "Archived",
+  },
+  {
+    id: "p4",
+    title: "Multimodal foundation models for radiology",
+    updated: "1 week ago",
+    papers: 31,
+    status: "Review",
+  },
 ];
 
 export type ActivityEvent = {

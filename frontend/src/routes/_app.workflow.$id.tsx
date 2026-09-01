@@ -1,6 +1,20 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Download, FileText, FolderKanban, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  FileText,
+  FolderKanban,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+  ChevronDown,
+  BookOpen,
+  Code,
+  Printer,
+  FileCode,
+} from "lucide-react";
 import { useWorkspaces } from "@/lib/workspaces";
 import { useDocuments, type Doc } from "@/lib/documents";
 import { getCachedPapers, searchCachedPapers } from "@/lib/paper-cache";
@@ -9,10 +23,17 @@ import { Input } from "@/components/ui/input";
 import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
 import { DocumentList, DocumentViewer } from "@/components/DocumentPanel";
 import { type Artifact } from "@/lib/agent-plan";
-import { downloadText, slugify, stamp } from "@/lib/download";
+import { downloadText, slugify, stamp, toBibTeX, toLaTeX, toPrintableHTML } from "@/lib/download";
 import { buildAgentReply } from "@/lib/agent";
 import { apiStream } from "@/lib/api";
-
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_app/workflow/$id")({
   head: ({ params }) => ({
@@ -20,7 +41,10 @@ export const Route = createFileRoute("/_app/workflow/$id")({
       { title: `Workspace · Arclight` },
       { name: "description", content: `Scoped research agent for workspace ${params.id}.` },
       { property: "og:title", content: "Workspace · Arclight" },
-      { property: "og:description", content: "Deep, paper-specific analysis inside a curated workspace." },
+      {
+        property: "og:description",
+        content: "Deep, paper-specific analysis inside a curated workspace.",
+      },
     ],
   }),
   component: WorkspaceDetail,
@@ -39,16 +63,14 @@ function WorkspaceDetail() {
   const [openDoc, setOpenDoc] = useState<Doc | null>(null);
   const { docs, create: createDoc, remove: removeDoc } = useDocuments(id);
 
-  const papers = useMemo(
-    () => (ws ? getCachedPapers(ws.paperIds) : []),
-    [ws],
-  );
+  const papers = useMemo(() => (ws ? getCachedPapers(ws.paperIds) : []), [ws]);
 
   const execute = (
     text: string,
     toolId: string | null,
     onProgress: (index: number) => void,
     callbacks?: StreamCallbacks,
+    history?: { role: "user" | "assistant"; content: string }[],
   ) => {
     const wantsDoc = toolId === "doc";
 
@@ -62,7 +84,8 @@ function WorkspaceDetail() {
             : /brief/i.test(text)
               ? "Brief"
               : "Report";
-      const title = text.replace(/^(generate|create|write|draft)\s+(a|an|the)?\s*/i, "").trim() || kind;
+      const title =
+        text.replace(/^(generate|create|write|draft)\s+(a|an|the)?\s*/i, "").trim() || kind;
 
       const steps = [
         { label: "Queuing document job", detail: title, ms: 0 },
@@ -71,9 +94,19 @@ function WorkspaceDetail() {
 
       const finish = async () => {
         onProgress(0);
-        const doc = await createDoc({ workspaceId: id, title, kind: kind as Doc["kind"], prompt: text });
+        const doc = await createDoc({
+          workspaceId: id,
+          title,
+          kind: kind as Doc["kind"],
+          prompt: text,
+        });
         onProgress(steps.length);
-        const artifact: Artifact = { type: "document", id: doc.id, title: doc.title, kind: doc.kind };
+        const artifact: Artifact = {
+          type: "document",
+          id: doc.id,
+          title: doc.title,
+          kind: doc.kind,
+        };
         return {
           text: `Started generating **${doc.title}** in the background. It'll appear in the **Documents** tab — you can close this tab and it'll keep going; reopen anytime to check progress or read it once it's ready.`,
           artifact,
@@ -92,35 +125,38 @@ function WorkspaceDetail() {
     const runAgent = (): Promise<{ text: string; artifact?: Artifact }> =>
       new Promise((resolve, reject) => {
         let finalText = "";
-        apiStream("/agent/run", { query: text, workspace_id: id }, (event, data) => {
-          if (event === "thinking" || event === "retrieving") {
-            onProgress(1);
-          } else if (event === "token") {
-            onProgress(2);
-            callbacks?.onToken?.(data.chunk ?? "");
-          } else if (event === "fast_completed") {
-            onProgress(2);
-            callbacks?.onFastCompleted?.(data.text ?? "");
-          } else if (event === "refining") {
-            onProgress(2);
-            callbacks?.onRefining?.(data.message ?? "");
-          } else if (event === "refined_completed") {
-            finalText = data.text ?? "";
-            onProgress(3);
-            callbacks?.onRefinedCompleted?.(finalText);
-          } else if (event === "completed") {
-            if (!finalText) finalText = data.text ?? "";
-            onProgress(3);
-            resolve({ text: finalText });
-          } else if (event === "error") {
-            reject(new Error(data.message ?? "Agent run failed"));
-          }
-        }).catch(reject);
+        apiStream(
+          "/agent/run",
+          { query: text, workspace_id: id, history: history || [] },
+          (event, data) => {
+            if (event === "thinking" || event === "retrieving") {
+              onProgress(1);
+            } else if (event === "token") {
+              onProgress(2);
+              callbacks?.onToken?.(data.chunk ?? "");
+            } else if (event === "fast_completed") {
+              onProgress(2);
+              callbacks?.onFastCompleted?.(data.text ?? "");
+            } else if (event === "refining") {
+              onProgress(2);
+              callbacks?.onRefining?.(data.message ?? "");
+            } else if (event === "refined_completed") {
+              finalText = data.text ?? "";
+              onProgress(3);
+              callbacks?.onRefinedCompleted?.(finalText);
+            } else if (event === "completed") {
+              if (!finalText) finalText = data.text ?? "";
+              onProgress(3);
+              resolve({ text: finalText });
+            } else if (event === "error") {
+              reject(new Error(data.message ?? "Agent run failed"));
+            }
+          },
+        ).catch(reject);
       });
 
     return { steps, finish: runAgent, live: true };
   };
-
 
   const candidates = useMemo(() => {
     if (!ws) return [];
@@ -143,7 +179,9 @@ function WorkspaceDetail() {
   return (
     <div className="mx-auto w-full max-w-[1400px] px-6 py-6">
       <div className="mb-4 flex items-center gap-2 text-xs text-muted-foreground">
-        <Link to="/workflow" className="hover:text-foreground">Workspaces</Link>
+        <Link to="/workflow" className="hover:text-foreground">
+          Workspaces
+        </Link>
         <span>/</span>
         <span className="text-foreground">{ws.name}</span>
       </div>
@@ -163,8 +201,15 @@ function WorkspaceDetail() {
                 }}
                 className="flex items-center gap-2"
               >
-                <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 text-lg" autoFocus />
-                <Button size="sm" type="submit" className="btn-pop">Save</Button>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="h-9 text-lg"
+                  autoFocus
+                />
+                <Button size="sm" type="submit" className="btn-pop">
+                  Save
+                </Button>
               </form>
             ) : (
               <div className="flex items-center gap-2">
@@ -184,35 +229,123 @@ function WorkspaceDetail() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button size="sm" variant="outline" className="btn-pop gap-1" onClick={() => setAdding((v) => !v)}>
-            <Plus className="h-4 w-4" /> Add papers
-          </Button>
           <Button
             size="sm"
+            variant="outline"
             className="btn-pop gap-1"
-            disabled={papers.length === 0}
-            onClick={() => {
-              const scope = `"${ws.name}"`;
-              const report = [
-                `# ${ws.name} — research report`,
-                `_${papers.length} papers · generated ${stamp()} by Arclight_`,
-                buildAgentReply("summarize corpus", papers, scope),
-                buildAgentReply("write literature review", papers, scope),
-                buildAgentReply("find research gaps", papers, scope),
-                buildAgentReply("compare methodologies", papers, scope),
-                `## Bibliography\n` +
-                  papers
-                    .map(
-                      (p, i) =>
-                        `${i + 1}. ${p.authors.join(", ")} (${p.year}). *${p.title}*. ${p.journal}. ${p.citations} citations.`,
-                    )
-                    .join("\n"),
-              ].join("\n\n---\n\n");
-              downloadText(`${slugify(ws.name)}-report-${stamp()}.txt`, report, "text/plain");
-            }}
+            onClick={() => setAdding((v) => !v)}
           >
-            <Download className="h-4 w-4" /> Export report
+            <Plus className="h-4 w-4" /> Add papers
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" className="btn-pop gap-1.5" disabled={papers.length === 0}>
+                <Download className="h-4 w-4" />
+                <span>Export Workspace</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56 text-xs">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Workspace Bibliography
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() =>
+                  downloadText(
+                    `${slugify(ws.name)}-bibliography.bib`,
+                    toBibTeX(papers),
+                    "text/x-bibtex",
+                  )
+                }
+                className="cursor-pointer gap-2"
+              >
+                <BookOpen className="h-3.5 w-3.5 text-amber-500" />
+                <span>BibTeX Citations (.bib)</span>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Synthesis Report Formats
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() => {
+                  const scope = `"${ws.name}"`;
+                  const report = [
+                    `# ${ws.name} — Research Synthesis Report`,
+                    `_${papers.length} papers · generated ${stamp()} by Arclight_`,
+                    buildAgentReply("summarize corpus", papers, scope),
+                    buildAgentReply("write literature review", papers, scope),
+                    buildAgentReply("find research gaps", papers, scope),
+                    buildAgentReply("compare methodologies", papers, scope),
+                  ].join("\n\n---\n\n");
+                  downloadText(`${slugify(ws.name)}-report-${stamp()}.md`, report, "text/markdown");
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <FileText className="h-3.5 w-3.5 text-accent" />
+                <span>Markdown Report (.md)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const scope = `"${ws.name}"`;
+                  const report = [
+                    `# ${ws.name} — Research Synthesis Report`,
+                    buildAgentReply("summarize corpus", papers, scope),
+                    buildAgentReply("write literature review", papers, scope),
+                    buildAgentReply("find research gaps", papers, scope),
+                  ].join("\n\n---\n\n");
+                  downloadText(
+                    `${slugify(ws.name)}-report-${stamp()}.tex`,
+                    toLaTeX(`${ws.name} Research Report`, report, papers),
+                    "text/x-tex",
+                  );
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <Code className="h-3.5 w-3.5 text-indigo-500" />
+                <span>LaTeX Source (.tex)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const scope = `"${ws.name}"`;
+                  const report = [
+                    `# ${ws.name} — Research Synthesis Report`,
+                    `_${papers.length} papers · generated ${stamp()} by Arclight_`,
+                    buildAgentReply("summarize corpus", papers, scope),
+                    buildAgentReply("write literature review", papers, scope),
+                    buildAgentReply("find research gaps", papers, scope),
+                  ].join("\n\n---\n\n");
+                  const html = toPrintableHTML(`${ws.name} Research Report`, report);
+                  const w = window.open("", "_blank");
+                  if (w) {
+                    w.document.write(html);
+                    w.document.close();
+                  }
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <Printer className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Print / Save to PDF</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const scope = `"${ws.name}"`;
+                  const report = [
+                    `# ${ws.name} — research report`,
+                    `_${papers.length} papers · generated ${stamp()} by Arclight_`,
+                    buildAgentReply("summarize corpus", papers, scope),
+                    buildAgentReply("write literature review", papers, scope),
+                    buildAgentReply("find research gaps", papers, scope),
+                  ].join("\n\n---\n\n");
+                  downloadText(`${slugify(ws.name)}-report-${stamp()}.txt`, report, "text/plain");
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <FileCode className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Plain Text (.txt)</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Button
             size="sm"
             variant="ghost"
@@ -237,7 +370,10 @@ function WorkspaceDetail() {
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Add papers
                 </span>
-                <button onClick={() => setAdding(false)} className="btn-pop rounded p-1 hover:bg-muted">
+                <button
+                  onClick={() => setAdding(false)}
+                  className="btn-pop rounded p-1 hover:bg-muted"
+                >
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -304,45 +440,52 @@ function WorkspaceDetail() {
           {tab === "docs" ? (
             <DocumentList docs={docs} onOpen={setOpenDoc} onRemove={removeDoc} />
           ) : (
-          <div className="card-3d overflow-hidden rounded-xl border border-border bg-card">
-            <div className="border-b border-border px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Papers in scope
-            </div>
-            {papers.length === 0 ? (
-              <div className="px-6 py-12 text-center">
-                <p className="text-sm text-muted-foreground">Empty workspace.</p>
-                <Link to="/search" className="mt-3 inline-block">
-                  <Button size="sm" className="btn-pop">Find papers in Discover</Button>
-                </Link>
+            <div className="card-3d overflow-hidden rounded-xl border border-border bg-card">
+              <div className="border-b border-border px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Papers in scope
               </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {papers.map((p, i) => (
-                  <li key={p.id} className="group flex items-start gap-3 px-4 py-3 hover:bg-muted/40">
-                    <span className="pt-0.5 font-mono text-[11px] text-muted-foreground">
-                      {String(i + 1).padStart(2, "0")}
-                    </span>
-                    <Link to="/papers/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                      <div className="mb-0.5 text-[11px] text-muted-foreground">
-                        {p.journal} · {p.year} · {p.citations.toLocaleString()} cites
-                      </div>
-                      <h3 className="text-sm font-medium leading-snug group-hover:text-accent">
-                        {p.title}
-                      </h3>
-                      <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{p.abstract}</p>
-                    </Link>
-                    <button
-                      onClick={() => removePaper(ws.id, p.id)}
-                      className="btn-pop rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                      aria-label="Remove"
+              {papers.length === 0 ? (
+                <div className="px-6 py-12 text-center">
+                  <p className="text-sm text-muted-foreground">Empty workspace.</p>
+                  <Link to="/search" className="mt-3 inline-block">
+                    <Button size="sm" className="btn-pop">
+                      Find papers in Discover
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {papers.map((p, i) => (
+                    <li
+                      key={p.id}
+                      className="group flex items-start gap-3 px-4 py-3 hover:bg-muted/40"
                     >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                      <span className="pt-0.5 font-mono text-[11px] text-muted-foreground">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <Link to="/papers/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                        <div className="mb-0.5 text-[11px] text-muted-foreground">
+                          {p.journal} · {p.year} · {p.citations.toLocaleString()} cites
+                        </div>
+                        <h3 className="text-sm font-medium leading-snug group-hover:text-accent">
+                          {p.title}
+                        </h3>
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                          {p.abstract}
+                        </p>
+                      </Link>
+                      <button
+                        onClick={() => removePaper(ws.id, p.id)}
+                        className="btn-pop rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                        aria-label="Remove"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </section>
 
@@ -381,7 +524,9 @@ function WorkspaceDetail() {
                   <FileText className="h-4 w-4 shrink-0 text-accent" />
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">{a.title}</div>
-                    <div className="text-[10px] text-muted-foreground">{a.kind} · open document</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      {a.kind} · open document
+                    </div>
                   </div>
                 </button>
               ) : null
@@ -394,4 +539,3 @@ function WorkspaceDetail() {
     </div>
   );
 }
-

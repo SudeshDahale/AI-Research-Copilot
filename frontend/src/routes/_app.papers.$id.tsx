@@ -11,7 +11,9 @@ export const Route = createFileRoute("/_app/papers/$id")({
     let paper = getCachedPapers([params.id])[0];
     if (!paper) {
       try {
-        const raw = await apiFetch<any>(`/papers/${params.id}`);
+        const raw = await apiFetch<Paper & { relevance?: number; pdf_url?: string }>(
+          `/papers/${params.id}`,
+        );
         paper = {
           ...raw,
           score: raw.relevance ?? 0.0,
@@ -49,14 +51,18 @@ const SECTIONS = [
 
 function PaperPage() {
   const { paper } = Route.useLoaderData();
-  const [similarPapers, setSimilarPapers] = useState<(Paper & { score?: number; isVector?: boolean })[]>([]);
+  const [similarPapers, setSimilarPapers] = useState<
+    (Paper & { score?: number; isVector?: boolean })[]
+  >([]);
   const [loadingSimilar, setLoadingSimilar] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function loadSimilar() {
       try {
-        const data = await apiFetch<any[]>(`/papers/${paper.id}/similar?limit=4`);
+        const data = await apiFetch<(Paper & { relevance?: number; pdf_url?: string })[]>(
+          `/papers/${paper.id}/similar?limit=4`,
+        );
         if (!cancelled && data && data.length > 0) {
           const mapped = data.map((p) => ({
             ...p,
@@ -121,19 +127,29 @@ function PaperPage() {
             )}
           </div>
           <h1 className="font-display text-4xl leading-tight md:text-5xl">{paper.title}</h1>
-          <div className="mt-2 text-sm text-muted-foreground">{(paper.authors || []).join(", ")}</div>
+          <div className="mt-2 text-sm text-muted-foreground">
+            {(paper.authors || []).join(", ")}
+          </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
             <Link to="/review">
-              <Button size="sm">Add to review <ArrowRight className="ml-1 h-3.5 w-3.5" /></Button>
+              <Button size="sm">
+                Add to review <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
             </Link>
-            <Button size="sm" variant="outline"><Bookmark className="mr-1 h-3.5 w-3.5" /> Save</Button>
+            <Button size="sm" variant="outline">
+              <Bookmark className="mr-1 h-3.5 w-3.5" /> Save
+            </Button>
             {paper.pdfUrl ? (
               <a href={paper.pdfUrl} target="_blank" rel="noopener noreferrer">
-                <Button size="sm" variant="outline"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF</Button>
+                <Button size="sm" variant="outline">
+                  <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF
+                </Button>
               </a>
             ) : (
-              <Button size="sm" variant="outline" disabled title="No PDF available"><ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF</Button>
+              <Button size="sm" variant="outline" disabled title="No PDF available">
+                <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF
+              </Button>
             )}
           </div>
         </div>
@@ -156,7 +172,9 @@ function PaperPage() {
             </h2>
             <dl className="mt-4 divide-y divide-border border-y border-border">
               {SECTIONS.map((s) => {
-                const val = (paper.summary as any)?.[s.key];
+                const summaryRecord = paper.summary as
+                  Record<string, string | undefined> | undefined;
+                const val = summaryRecord?.[s.key];
                 if (!val) return null;
                 return (
                   <div key={s.key} className="grid grid-cols-[100px_1fr] gap-4 py-3">
@@ -174,11 +192,14 @@ function PaperPage() {
           <div className="mt-8 grid gap-6 md:grid-cols-2">
             {paper.gaps && paper.gaps.length > 0 && (
               <div>
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Gaps</h3>
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Gaps
+                </h3>
                 <ul className="mt-3 space-y-2 text-sm">
                   {paper.gaps.map((g: string) => (
                     <li key={g} className="flex gap-2 text-foreground/85">
-                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/40" />{g}
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/40" />
+                      {g}
                     </li>
                   ))}
                 </ul>
@@ -186,11 +207,14 @@ function PaperPage() {
             )}
             {paper.future && paper.future.length > 0 && (
               <div>
-                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Future work</h3>
+                <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Future work
+                </h3>
                 <ul className="mt-3 space-y-2 text-sm">
                   {paper.future.map((f: string) => (
                     <li key={f} className="flex gap-2 text-foreground/85">
-                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/40" />{f}
+                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-foreground/40" />
+                      {f}
                     </li>
                   ))}
                 </ul>
@@ -202,7 +226,9 @@ function PaperPage() {
 
       <aside className="lg:sticky lg:top-8 lg:self-start">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Similar papers</h3>
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Similar papers
+          </h3>
           {similarPapers.some((p) => p.isVector) && (
             <span className="inline-flex items-center gap-1 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
               <Sparkles className="h-3 w-3" /> pgvector
@@ -216,14 +242,15 @@ function PaperPage() {
         ) : (
           <ul className="mt-3 space-y-3">
             {similarPapers.map((r) => (
-              <li key={r.id} className="rounded-lg border border-border bg-card/60 p-2.5 transition hover:border-accent/40">
-                <Link
-                  to="/papers/$id"
-                  params={{ id: r.id }}
-                  className="group block"
-                >
+              <li
+                key={r.id}
+                className="rounded-lg border border-border bg-card/60 p-2.5 transition hover:border-accent/40"
+              >
+                <Link to="/papers/$id" params={{ id: r.id }} className="group block">
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>{r.journal || "ArXiv"} · {r.year}</span>
+                    <span>
+                      {r.journal || "ArXiv"} · {r.year}
+                    </span>
                     {typeof r.score === "number" && r.score > 0 && (
                       <span className="font-mono text-[10px] text-accent">
                         {Math.round(r.score * 100)}% match

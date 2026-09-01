@@ -39,6 +39,7 @@ async def run_deep_pipeline_async(
     intent: str,
     workspace_id: str | None = None,
     papers: list[dict[str, Any]] | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Execute deep analysis directly on in-memory papers (no re-retrieval).
     

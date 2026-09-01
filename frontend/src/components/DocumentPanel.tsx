@@ -1,9 +1,30 @@
 import { useState } from "react";
-import { FileText, X, Download, Clock, Loader2, AlertCircle } from "lucide-react";
+import {
+  FileText,
+  X,
+  Download,
+  Clock,
+  Loader2,
+  AlertCircle,
+  ChevronDown,
+  Check,
+  Copy,
+  Printer,
+  Code,
+  FileCode,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Doc } from "@/lib/documents";
-import { downloadText, slugify } from "@/lib/download";
+import { downloadText, slugify, toLaTeX, toPrintableHTML } from "@/lib/download";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function DocumentList({
   docs,
@@ -25,7 +46,9 @@ export function DocumentList({
       {docs.length === 0 ? (
         <div className="px-6 py-8 text-center text-xs text-muted-foreground">
           No documents yet. In the agent chat, hit{" "}
-          <span className="rounded border border-border bg-background px-1 py-0.5 font-mono">+</span>{" "}
+          <span className="rounded border border-border bg-background px-1 py-0.5 font-mono">
+            +
+          </span>{" "}
           → <span className="text-accent">Generate document</span>.
         </div>
       ) : (
@@ -36,7 +59,9 @@ export function DocumentList({
                 <FileText className="h-4 w-4" />
               </div>
               <button onClick={() => onOpen(d)} className="min-w-0 flex-1 text-left">
-                <div className="truncate text-sm font-medium group-hover:text-accent">{d.title}</div>
+                <div className="truncate text-sm font-medium group-hover:text-accent">
+                  {d.title}
+                </div>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span className="rounded-full border border-border px-1.5 py-0">{d.kind}</span>
                   {d.status === "pending" || d.status === "processing" ? (
@@ -86,20 +111,80 @@ export function DocumentViewer({ doc, onClose }: { doc: Doc; onClose: () => void
               {doc.kind} · {doc.words.toLocaleString()} words
             </div>
           </div>
-          <button
-            onClick={() => downloadText(`${slugify(doc.title)}.txt`, doc.content, "text/plain")}
-            className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={doc.status !== "done"}
+                className="btn-pop inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-foreground hover:border-accent hover:text-accent disabled:opacity-40"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Export</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48 text-xs">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Document Formats
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() =>
+                  downloadText(`${slugify(doc.title)}.md`, doc.content, "text/markdown")
+                }
+                className="cursor-pointer gap-2"
+              >
+                <FileText className="h-3.5 w-3.5 text-accent" />
+                <span>Markdown (.md)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() =>
+                  downloadText(
+                    `${slugify(doc.title)}.tex`,
+                    toLaTeX(doc.title, doc.content),
+                    "text/x-tex",
+                  )
+                }
+                className="cursor-pointer gap-2"
+              >
+                <Code className="h-3.5 w-3.5 text-indigo-500" />
+                <span>LaTeX Source (.tex)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => downloadText(`${slugify(doc.title)}.txt`, doc.content, "text/plain")}
+                className="cursor-pointer gap-2"
+              >
+                <FileCode className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Plain Text (.txt)</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  const html = toPrintableHTML(doc.title, doc.content);
+                  const w = window.open("", "_blank");
+                  if (w) {
+                    w.document.write(html);
+                    w.document.close();
+                  }
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <Printer className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Print / Save to PDF</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <button
             onClick={() => {
               navigator.clipboard?.writeText(doc.content);
               setCopied(true);
               setTimeout(() => setCopied(false), 1400);
             }}
-            className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent"
+            className="btn-pop inline-flex items-center gap-1 rounded-md border border-border bg-background px-2.5 py-1 text-[11px] text-muted-foreground hover:border-accent hover:text-accent"
           >
+            {copied ? (
+              <Check className="h-3.5 w-3.5 text-emerald-500" />
+            ) : (
+              <Copy className="h-3.5 w-3.5" />
+            )}
             {copied ? "Copied" : "Copy"}
           </button>
           <button
@@ -115,8 +200,8 @@ export function DocumentViewer({ doc, onClose }: { doc: Doc; onClose: () => void
             <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin text-accent" />
               <p className="text-sm">
-                Still generating in the background — this document will keep going even if you close this
-                window. Reopen it anytime to check back.
+                Still generating in the background — this document will keep going even if you close
+                this window. Reopen it anytime to check back.
               </p>
             </div>
           ) : doc.status === "failed" ? (

@@ -13,19 +13,18 @@ export type Artifact =
   | { type: "workspace"; id: string; name: string; count: number }
   | { type: "document"; id: string; title: string; kind: string };
 
-export const DOC_KINDS = [
-  "Literature review",
-  "Summary",
-  "Report",
-  "Outline",
-  "Brief",
-] as const;
+export const DOC_KINDS = ["Literature review", "Summary", "Report", "Outline", "Brief"] as const;
 
 export function detectIntent(text: string): "workspace" | "document" | "answer" {
   const q = text.toLowerCase();
   if (q.includes("workspace") || q.includes("collection") || q.includes("save these"))
     return "workspace";
-  if (q.includes("document") || q.includes("write up") || q.includes("draft a") || q.includes("generate a doc"))
+  if (
+    q.includes("document") ||
+    q.includes("write up") ||
+    q.includes("draft a") ||
+    q.includes("generate a doc")
+  )
     return "document";
   return "answer";
 }
@@ -44,8 +43,16 @@ export function searchSteps(query: string, n: number): PlanStep[] {
 export function workspaceSteps(query: string, n: number): PlanStep[] {
   return [
     { label: "Reading your request", detail: "Task: curate papers → create workspace", ms: 600 },
-    { label: "Scoring relevance", detail: `Ranking ${n} candidates against "${truncate(query)}"`, ms: 850 },
-    { label: "Filtering low-signal papers", detail: "Dropping match < 45% and retracted work", ms: 750 },
+    {
+      label: "Scoring relevance",
+      detail: `Ranking ${n} candidates against "${truncate(query)}"`,
+      ms: 850,
+    },
+    {
+      label: "Filtering low-signal papers",
+      detail: "Dropping match < 45% and retracted work",
+      ms: 750,
+    },
     { label: "Creating workspace", detail: "Allocating scoped agent memory", ms: 700 },
     { label: "Attaching papers", detail: "Indexing full texts for scoped reasoning", ms: 750 },
   ];

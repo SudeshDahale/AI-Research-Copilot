@@ -228,12 +228,12 @@ async def test_agent_dual_pipeline_integration_stream():
             ]
         }
 
-    async def mock_fast_stream(query, papers, intent="generic", max_papers=5):
+    async def mock_fast_stream(query, papers, intent="generic", max_papers=5, **kwargs):
         yield "Immediate "
         yield "quantum "
         yield "insight."
 
-    async def mock_deep_async(query, intent, workspace_id=None, papers=None):
+    async def mock_deep_async(query, intent, workspace_id=None, papers=None, **kwargs):
         return {
             "stage": "gaps",
             "stage_message": "Identifying deep research gaps",

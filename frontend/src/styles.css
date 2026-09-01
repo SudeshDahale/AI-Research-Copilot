@@ -1,4 +1,4 @@
-@import "tailwindcss" source(none);
+@import "tailwindcss";
 @source "../src";
 @import "tw-animate-css";
 
@@ -68,22 +68,22 @@
   --accent-foreground: oklch(0.98 0 0);
   --destructive: oklch(0.55 0.22 27);
   --destructive-foreground: oklch(0.98 0 0);
-  --border: oklch(0.90 0.004 90);
+  --border: oklch(0.9 0.004 90);
   --input: oklch(0.93 0.004 90);
   --ring: oklch(0.55 0.18 258);
   --live: oklch(0.65 0.18 150);
   --chart-1: oklch(0.55 0.18 258);
   --chart-2: oklch(0.65 0.15 200);
   --chart-3: oklch(0.65 0.18 150);
-  --chart-4: oklch(0.70 0.17 60);
-  --chart-5: oklch(0.60 0.20 20);
+  --chart-4: oklch(0.7 0.17 60);
+  --chart-5: oklch(0.6 0.2 20);
   --sidebar: oklch(0.98 0.003 90);
   --sidebar-foreground: oklch(0.28 0.01 260);
   --sidebar-primary: oklch(0.22 0.02 260);
   --sidebar-primary-foreground: oklch(0.98 0 0);
   --sidebar-accent: oklch(0.94 0.005 90);
   --sidebar-accent-foreground: oklch(0.18 0.01 260);
-  --sidebar-border: oklch(0.90 0.004 90);
+  --sidebar-border: oklch(0.9 0.004 90);
   --sidebar-ring: oklch(0.55 0.18 258);
 }
 
@@ -104,7 +104,10 @@
     -webkit-font-smoothing: antialiased;
   }
 
-  h1, h2, h3, h4 {
+  h1,
+  h2,
+  h3,
+  h4 {
     letter-spacing: -0.015em;
   }
 
@@ -119,9 +122,21 @@
   position: relative;
   background-color: var(--background);
   background-image:
-    radial-gradient(1100px 620px at 50% -8%, color-mix(in oklab, var(--accent) 14%, transparent), transparent 62%),
-    radial-gradient(1200px 260px at 50% 58%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 70%),
-    radial-gradient(900px 520px at 100% 100%, color-mix(in oklab, var(--chart-2) 10%, transparent), transparent 62%);
+    radial-gradient(
+      1100px 620px at 50% -8%,
+      color-mix(in oklab, var(--accent) 14%, transparent),
+      transparent 62%
+    ),
+    radial-gradient(
+      1200px 260px at 50% 58%,
+      color-mix(in oklab, var(--accent) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      900px 520px at 100% 100%,
+      color-mix(in oklab, var(--chart-2) 10%, transparent),
+      transparent 62%
+    );
   isolation: isolate;
 
   /* back wall — grid receding away from the viewer */
@@ -134,8 +149,16 @@
     transform: perspective(700px) rotateX(-52deg);
     transform-origin: bottom center;
     background-image:
-      linear-gradient(to right, color-mix(in oklab, var(--foreground) 16%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklab, var(--foreground) 16%, transparent) 1px, transparent 1px);
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--foreground) 16%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--foreground) 16%, transparent) 1px,
+        transparent 1px
+      );
     background-size: 80px 80px;
     mask-image: linear-gradient(to bottom, transparent 4%, black 60%, black 100%);
     animation: room-drift 40s linear infinite;
@@ -151,10 +174,23 @@
     transform: perspective(520px) rotateX(74deg);
     transform-origin: top center;
     background-image:
-      linear-gradient(to right, color-mix(in oklab, var(--foreground) 14%, transparent) 1px, transparent 1px),
-      linear-gradient(to bottom, color-mix(in oklab, var(--accent) 26%, transparent) 1px, transparent 1px);
+      linear-gradient(
+        to right,
+        color-mix(in oklab, var(--foreground) 14%, transparent) 1px,
+        transparent 1px
+      ),
+      linear-gradient(
+        to bottom,
+        color-mix(in oklab, var(--accent) 26%, transparent) 1px,
+        transparent 1px
+      );
     background-size: 80px 80px;
-    mask-image: linear-gradient(to bottom, black 0%, color-mix(in oklab, black 45%, transparent) 45%, transparent 88%);
+    mask-image: linear-gradient(
+      to bottom,
+      black 0%,
+      color-mix(in oklab, black 45%, transparent) 45%,
+      transparent 88%
+    );
     animation: floor-run 7s linear infinite;
   }
 }
@@ -172,12 +208,18 @@
   }
 }
 
-
 @keyframes room-drift {
-  0% { background-position: 0 0, 0 0; }
-  100% { background-position: 76px 0, 0 76px; }
+  0% {
+    background-position:
+      0 0,
+      0 0;
+  }
+  100% {
+    background-position:
+      76px 0,
+      0 76px;
+  }
 }
-
 
 /* Elevated card with layered shadow — subtle 3D lift */
 @utility card-3d {
@@ -185,7 +227,9 @@
     0 1px 0 0 color-mix(in oklab, var(--foreground) 4%, transparent) inset,
     0 1px 2px 0 color-mix(in oklab, var(--foreground) 6%, transparent),
     0 8px 24px -12px color-mix(in oklab, var(--foreground) 14%, transparent);
-  transition: transform 200ms ease, box-shadow 200ms ease;
+  transition:
+    transform 200ms ease,
+    box-shadow 200ms ease;
   &:hover {
     box-shadow:
       0 1px 0 0 color-mix(in oklab, var(--foreground) 4%, transparent) inset,
@@ -196,9 +240,18 @@
 
 /* Interactive pop — subtle lift + press for buttons */
 @utility btn-pop {
-  transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease, color 150ms ease, border-color 150ms ease;
-  &:hover:not(:disabled) { transform: translateY(-1px); }
-  &:active:not(:disabled) { transform: translateY(0) scale(0.98); }
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease,
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+  &:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  &:active:not(:disabled) {
+    transform: translateY(0) scale(0.98);
+  }
 }
 
 @utility live-dot {
@@ -209,18 +262,29 @@
   border-radius: 9999px;
   background: var(--live);
   box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 55%, transparent);
-  animation: live-pulse 2s cubic-bezier(0.4,0,0.6,1) infinite;
+  animation: live-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 @keyframes live-pulse {
-  0%   { box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 55%, transparent); }
-  70%  { box-shadow: 0 0 0 6px color-mix(in oklab, var(--live) 0%, transparent); }
-  100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 0%, transparent); }
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px color-mix(in oklab, var(--live) 0%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--live) 0%, transparent);
+  }
 }
 
 @keyframes caret-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }
 
 @utility caret {
@@ -234,16 +298,50 @@
 }
 
 /* Agent markdown rendering */
-.agent-md > :first-child { margin-top: 0; }
-.agent-md > :last-child { margin-bottom: 0; }
-.agent-md h2 { font-size: 0.9rem; font-weight: 600; margin: 0.5rem 0 0.35rem; }
-.agent-md h3 { font-size: 0.8rem; font-weight: 600; margin: 0.6rem 0 0.25rem; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.04em; }
-.agent-md p { margin: 0.35rem 0; }
-.agent-md ul, .agent-md ol { margin: 0.35rem 0; padding-left: 1.1rem; list-style: disc; }
-.agent-md ol { list-style: decimal; }
-.agent-md li { margin: 0.15rem 0; }
-.agent-md strong { font-weight: 600; }
-.agent-md code { font-family: var(--font-mono); font-size: 0.85em; background: var(--background); padding: 0 0.25em; border-radius: 3px; }
+.agent-md > :first-child {
+  margin-top: 0;
+}
+.agent-md > :last-child {
+  margin-bottom: 0;
+}
+.agent-md h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0.35rem;
+}
+.agent-md h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0.6rem 0 0.25rem;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-md p {
+  margin: 0.35rem 0;
+}
+.agent-md ul,
+.agent-md ol {
+  margin: 0.35rem 0;
+  padding-left: 1.1rem;
+  list-style: disc;
+}
+.agent-md ol {
+  list-style: decimal;
+}
+.agent-md li {
+  margin: 0.15rem 0;
+}
+.agent-md strong {
+  font-weight: 600;
+}
+.agent-md code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--background);
+  padding: 0 0.25em;
+  border-radius: 3px;
+}
 .agent-md table {
   width: 100%;
   border-collapse: separate;
@@ -254,13 +352,15 @@
   overflow: hidden;
   border: 1px solid var(--border);
 }
-.agent-md th, .agent-md td {
+.agent-md th,
+.agent-md td {
   border-bottom: 1px solid var(--border);
   border-right: 1px solid var(--border);
   padding: 0.4rem 0.6rem;
   text-align: left;
 }
-.agent-md th:last-child, .agent-md td:last-child {
+.agent-md th:last-child,
+.agent-md td:last-child {
   border-right: none;
 }
 .agent-md tr:last-child td {
@@ -280,4 +380,7 @@
 .agent-md tbody tr:hover {
   background: rgba(125, 125, 125, 0.08);
 }
-.agent-md hr { border-color: var(--border); margin: 0.6rem 0; }
+.agent-md hr {
+  border-color: var(--border);
+  margin: 0.6rem 0;
+}

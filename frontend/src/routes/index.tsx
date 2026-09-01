@@ -87,8 +87,8 @@ function Landing() {
           <em className="text-muted-foreground">organized.</em>
         </h1>
         <p className="mt-6 max-w-md text-base leading-relaxed text-muted-foreground">
-          Find, read, and synthesize scientific papers in one calm workspace.
-          Built for libraries of thousands.
+          Find, read, and synthesize scientific papers in one calm workspace. Built for libraries of
+          thousands.
         </p>
 
         <form onSubmit={submit} className="mt-10 flex w-full max-w-md flex-col gap-2">
@@ -118,8 +118,8 @@ function Landing() {
         </form>
 
         <p className="mt-3 text-xs text-muted-foreground">
-          Free for individual researchers. No credit card. New here? The same
-          form creates your account — just pick a password (min 8 characters).
+          Free for individual researchers. No credit card. New here? The same form creates your
+          account — just pick a password (min 8 characters).
         </p>
       </main>
 

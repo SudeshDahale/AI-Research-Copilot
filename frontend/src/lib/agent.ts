@@ -11,7 +11,10 @@ export const AGENT_TASKS = [
 function paperList(papers: Paper[], n = 8) {
   return papers
     .slice(0, n)
-    .map((p, i) => `  [${i + 1}] ${p.authors[0] ?? "Anon"} et al. (${p.year}). ${p.title}. ${p.journal}.`)
+    .map(
+      (p, i) =>
+        `  [${i + 1}] ${p.authors[0] ?? "Anon"} et al. (${p.year}). ${p.title}. ${p.journal}.`,
+    )
     .join("\n");
 }
 
@@ -25,11 +28,14 @@ export function buildAgentReply(question: string, papers: Paper[], scope: string
   const span = `${Math.min(...years)}–${Math.max(...years)}`;
 
   if (q.includes("tabl") || q.includes("matrix") || q.includes("grid")) {
-    const rows = papers.slice(0, 6).map((p, i) => {
-      const author = p.authors[0] ?? "Anon";
-      const tag = p.tags[0] ?? "General";
-      return `| [${i + 1}] ${p.title.slice(0, 32)}… | ${author} (${p.year}) | ${tag} | ${p.citations.toLocaleString()} |`;
-    }).join("\n");
+    const rows = papers
+      .slice(0, 6)
+      .map((p, i) => {
+        const author = p.authors[0] ?? "Anon";
+        const tag = p.tags[0] ?? "General";
+        return `| [${i + 1}] ${p.title.slice(0, 32)}… | ${author} (${p.year}) | ${tag} | ${p.citations.toLocaleString()} |`;
+      })
+      .join("\n");
 
     return `## Tabular Analysis — ${scope}
 Analyzed ${papers.length} papers across ${span}.

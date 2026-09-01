@@ -8,21 +8,42 @@ import {
   ChevronRight,
   Check,
   FolderOpen,
+  ChevronDown,
+  Code,
+  FileCode,
+  Printer,
+  Copy,
+  BookOpen,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { useDocuments, type Doc } from "@/lib/documents";
 import { useWorkspaces } from "@/lib/workspaces";
-import { downloadText, slugify } from "@/lib/download";
+import { getCachedPapers } from "@/lib/paper-cache";
+import { downloadText, slugify, toLaTeX, toBibTeX, toPrintableHTML } from "@/lib/download";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/_app/review")({
   head: () => ({
     meta: [
       { title: "Review · Arclight" },
-      { name: "description", content: "Review and export AI-generated documents from your workspaces." },
+      {
+        name: "description",
+        content: "Review and export AI-generated documents from your workspaces.",
+      },
       { property: "og:title", content: "Review · Arclight" },
-      { property: "og:description", content: "Review and export AI-generated documents from your workspaces." },
+      {
+        property: "og:description",
+        content: "Review and export AI-generated documents from your workspaces.",
+      },
     ],
   }),
   component: ReviewPage,
@@ -30,9 +51,7 @@ export const Route = createFileRoute("/_app/review")({
 
 function ReviewPage() {
   const { workspaces } = useWorkspaces();
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | undefined>(
-    workspaces[0]?.id,
-  );
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | undefined>(workspaces[0]?.id);
 
   // Automatically select the first available workspace once workspaces finish loading
   useEffect(() => {
@@ -51,11 +70,7 @@ function ReviewPage() {
   };
 
   // Use selectedDoc if set, otherwise default to the first done doc
-  const activeDoc =
-    selectedDoc ??
-    docs.find((d) => d.status === "done") ??
-    docs[0] ??
-    null;
+  const activeDoc = selectedDoc ?? docs.find((d) => d.status === "done") ?? docs[0] ?? null;
 
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
 
@@ -194,20 +209,93 @@ function DocView({ doc }: { doc: Doc }) {
         </div>
 
         <div className="flex shrink-0 flex-wrap gap-2 pt-1">
-          <Button
-            size="sm"
-            disabled={!isDone}
-            onClick={() => downloadText(`${slugify(doc.title)}.md`, doc.content, "text/plain")}
-          >
-            <Download className="mr-1 h-3.5 w-3.5" /> Export
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" disabled={!isDone} className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                <span>Export Document</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-52 text-xs">
+              <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                Document Formats
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                onClick={() =>
+                  downloadText(`${slugify(doc.title)}.md`, doc.content, "text/markdown")
+                }
+                className="cursor-pointer gap-2"
+              >
+                <FileText className="h-3.5 w-3.5 text-accent" />
+                <span>Markdown (.md)</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const wsPapers = getCachedPapers(activeWs?.paperIds || []);
+                  downloadText(
+                    `${slugify(doc.title)}.tex`,
+                    toLaTeX(doc.title, doc.content, wsPapers),
+                    "text/x-tex",
+                  );
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <Code className="h-3.5 w-3.5 text-indigo-500" />
+                <span>LaTeX Article (.tex)</span>
+              </DropdownMenuItem>
+              {activeWs && activeWs.paperIds && activeWs.paperIds.length > 0 && (
+                <DropdownMenuItem
+                  onClick={() => {
+                    const wsPapers = getCachedPapers(activeWs.paperIds);
+                    downloadText(
+                      `${slugify(doc.title)}-bibliography.bib`,
+                      toBibTeX(wsPapers),
+                      "text/x-bibtex",
+                    );
+                  }}
+                  className="cursor-pointer gap-2"
+                >
+                  <BookOpen className="h-3.5 w-3.5 text-amber-500" />
+                  <span>BibTeX Citations (.bib)</span>
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onClick={() => downloadText(`${slugify(doc.title)}.txt`, doc.content, "text/plain")}
+                className="cursor-pointer gap-2"
+              >
+                <FileCode className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Plain Text (.txt)</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  const html = toPrintableHTML(doc.title, doc.content);
+                  const w = window.open("", "_blank");
+                  if (w) {
+                    w.document.write(html);
+                    w.document.close();
+                  }
+                }}
+                className="cursor-pointer gap-2"
+              >
+                <Printer className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Print / Save to PDF</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             size="sm"
             variant="outline"
             disabled={!isDone}
-            onClick={() => navigator.clipboard?.writeText(doc.content)}
+            onClick={() => {
+              navigator.clipboard?.writeText(doc.content);
+            }}
+            className="gap-1.5"
           >
-            Copy
+            <Copy className="h-3.5 w-3.5" />
+            <span>Copy</span>
           </Button>
         </div>
       </div>
@@ -231,9 +319,7 @@ function DocView({ doc }: { doc: Doc }) {
         <div className="flex flex-col items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 py-16 text-center text-destructive">
           <AlertCircle className="h-7 w-7" />
           <p className="font-medium">Generation failed</p>
-          {doc.error && (
-            <p className="max-w-prose text-sm opacity-80">{doc.error}</p>
-          )}
+          {doc.error && <p className="max-w-prose text-sm opacity-80">{doc.error}</p>}
         </div>
       )}
 
@@ -261,7 +347,8 @@ function EmptyState({
       <div className="space-y-1">
         <p className="font-display text-2xl">No documents yet</p>
         <p className="max-w-xs text-sm text-muted-foreground">
-          Generate a literature review, report, or summary from any workspace — it'll appear here once it's ready.
+          Generate a literature review, report, or summary from any workspace — it'll appear here
+          once it's ready.
         </p>
       </div>
       {workspaceId ? (

@@ -58,10 +58,10 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
  * runAgent Promise), even though the backend itself finished correctly every
  * time — hence "backend logs look fast, but the UI just hangs."
  */
-export async function apiStream(
+export async function apiStream<T = any>(
   path: string,
   body: unknown,
-  onEvent: (event: string, data: unknown) => void,
+  onEvent: (event: string, data: T) => void,
 ): Promise<void> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: "POST",
@@ -94,9 +94,9 @@ export async function apiStream(
     }
     if (!dataLine) return;
     try {
-      onEvent(eventName, JSON.parse(dataLine));
+      onEvent(eventName, JSON.parse(dataLine) as T);
     } catch {
-      onEvent(eventName, dataLine);
+      onEvent(eventName, dataLine as unknown as T);
     }
   };
 

@@ -1,10 +1,25 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowLeft, Bookmark, ExternalLink, ArrowRight, Sparkles, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Bookmark,
+  ExternalLink,
+  ArrowRight,
+  Sparkles,
+  Loader2,
+  Star,
+  BookOpen,
+  CheckCircle2,
+  Circle,
+  FolderPlus,
+  Plus,
+  Check,
+} from "lucide-react";
 import { type Paper } from "@/lib/mock-data";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { getCachedPapers, cachePapers, searchCachedPapers } from "@/lib/paper-cache";
+import { useWorkspaces } from "@/lib/workspaces";
 
 export const Route = createFileRoute("/_app/papers/$id")({
   loader: async ({ params }) => {
@@ -16,7 +31,7 @@ export const Route = createFileRoute("/_app/papers/$id")({
         );
         paper = {
           ...raw,
-          score: raw.relevance ?? 0.0,
+          relevance: raw.relevance ?? 0.0,
           pdfUrl: raw.pdf_url,
         };
         cachePapers([paper]);
@@ -55,6 +70,77 @@ function PaperPage() {
     (Paper & { score?: number; isVector?: boolean })[]
   >([]);
   const [loadingSimilar, setLoadingSimilar] = useState(true);
+  const [isStarred, setIsStarred] = useState(false);
+  const [status, setStatus] = useState<"unread" | "reading" | "read">(paper.status || "unread");
+  const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
+  const [notification, setNotification] = useState<string | null>(null);
+
+  const { workspaces, create, addPapers } = useWorkspaces();
+
+  const notify = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // Load star state & auto-transition to reading
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("arclight-starred-papers");
+      const starred = raw ? JSON.parse(raw) : [];
+      setIsStarred(starred.includes(paper.id));
+    } catch {
+      // ignore
+    }
+
+    // Auto-transition unread -> reading when paper details are opened
+    if ((paper.status || "unread") === "unread") {
+      const updated: Paper = { ...paper, status: "reading" };
+      cachePapers([updated]);
+      setStatus("reading");
+    }
+  }, [paper.id]);
+
+  const toggleStar = () => {
+    try {
+      const raw = localStorage.getItem("arclight-starred-papers");
+      const starred: string[] = raw ? JSON.parse(raw) : [];
+      let next: string[];
+      if (starred.includes(paper.id)) {
+        next = starred.filter((id) => id !== paper.id);
+        setIsStarred(false);
+        notify("Paper unstarred");
+      } else {
+        next = [...starred, paper.id];
+        setIsStarred(true);
+        cachePapers([paper]);
+        notify("⭐ Paper starred and saved to Library");
+      }
+      localStorage.setItem("arclight-starred-papers", JSON.stringify(next));
+    } catch (err) {
+      console.warn("Failed to toggle star:", err);
+    }
+  };
+
+  const updateStatus = (newStatus: "unread" | "reading" | "read") => {
+    setStatus(newStatus);
+    const updated: Paper = { ...paper, status: newStatus };
+    cachePapers([updated]);
+    notify(`Reading status set to "${newStatus}"`);
+  };
+
+  const handleAddToWorkspace = (wsId: string) => {
+    addPapers(wsId, [paper.id]);
+    setWsDropdownOpen(false);
+    notify("Paper added to workspace");
+  };
+
+  const handleCreateWorkspace = () => {
+    const name = prompt("Name this workspace:", `${paper.title.slice(0, 32)}… Workspace`);
+    if (!name) return;
+    create(name, [paper.id], [paper]);
+    setWsDropdownOpen(false);
+    notify(`Workspace "${name}" created with this paper`);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -75,7 +161,6 @@ function PaperPage() {
           return;
         }
       } catch (err) {
-        // Expected when paper or library is not yet embedded in vector DB
         console.info("Vector similarity unavailable, using cached fallback:", err);
       }
 
@@ -97,6 +182,14 @@ function PaperPage() {
 
   return (
     <div className="mx-auto grid w-full max-w-5xl grid-cols-1 gap-10 px-6 py-8 lg:grid-cols-[1fr_260px]">
+      {/* Toast Notification */}
+      {notification && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-primary/20 bg-background/95 px-4 py-2.5 text-xs font-medium text-foreground shadow-xl backdrop-blur animate-in fade-in slide-in-from-bottom-2">
+          <Check className="h-4 w-4 text-emerald-500" />
+          {notification}
+        </div>
+      )}
+
       <div className="min-w-0">
         <button
           onClick={() => {
@@ -131,26 +224,104 @@ function PaperPage() {
             {(paper.authors || []).join(", ")}
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Link to="/review">
-              <Button size="sm">
-                Add to review <ArrowRight className="ml-1 h-3.5 w-3.5" />
-              </Button>
-            </Link>
-            <Button size="sm" variant="outline">
-              <Bookmark className="mr-1 h-3.5 w-3.5" /> Save
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {/* Star button */}
+            <Button
+              size="sm"
+              variant={isStarred ? "default" : "outline"}
+              onClick={toggleStar}
+              className={`btn-pop gap-1.5 ${isStarred ? "bg-amber-500 hover:bg-amber-600 text-white" : ""}`}
+            >
+              <Star className={`h-3.5 w-3.5 ${isStarred ? "fill-white" : ""}`} />
+              {isStarred ? "Starred" : "Star Paper"}
             </Button>
+
+            {/* Reading Status Pill */}
+            <div className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
+              <button
+                onClick={() => updateStatus("reading")}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
+                  status === "reading"
+                    ? "bg-blue-500/10 font-medium text-blue-500 shadow-sm ring-1 ring-blue-500/30"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <BookOpen className="h-3 w-3" /> Reading
+              </button>
+              <button
+                onClick={() => updateStatus("read")}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
+                  status === "read"
+                    ? "bg-emerald-500/10 font-medium text-emerald-500 shadow-sm ring-1 ring-emerald-500/30"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <CheckCircle2 className="h-3 w-3" /> Read
+              </button>
+              <button
+                onClick={() => updateStatus("unread")}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 transition-colors ${
+                  status === "unread"
+                    ? "bg-background font-medium text-foreground shadow-sm ring-1 ring-border"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Circle className="h-3 w-3" /> Unread
+              </button>
+            </div>
+
+            {/* Add to Workspace dropdown */}
+            <div className="relative">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
+                className="btn-pop gap-1.5"
+              >
+                <FolderPlus className="h-3.5 w-3.5" /> Workspace
+              </Button>
+
+              {wsDropdownOpen && (
+                <div className="absolute left-0 top-full z-20 mt-1.5 w-56 rounded-lg border border-border bg-card p-1.5 shadow-xl">
+                  <button
+                    onClick={handleCreateWorkspace}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs text-primary hover:bg-primary/10 font-medium"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Create new workspace
+                  </button>
+                  {workspaces.length > 0 && <div className="my-1 border-t border-border" />}
+                  {workspaces.map((w) => (
+                    <button
+                      key={w.id}
+                      onClick={() => handleAddToWorkspace(w.id)}
+                      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-foreground hover:bg-muted"
+                    >
+                      <span className="truncate">{w.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{w.paperIds.length}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* PDF Link */}
             {paper.pdfUrl ? (
               <a href={paper.pdfUrl} target="_blank" rel="noopener noreferrer">
-                <Button size="sm" variant="outline">
-                  <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF
+                <Button size="sm" variant="outline" className="gap-1.5">
+                  <ExternalLink className="h-3.5 w-3.5" /> Open PDF
                 </Button>
               </a>
             ) : (
-              <Button size="sm" variant="outline" disabled title="No PDF available">
-                <ExternalLink className="mr-1 h-3.5 w-3.5" /> Open PDF
+              <Button size="sm" variant="outline" disabled title="No PDF available" className="gap-1.5">
+                <ExternalLink className="h-3.5 w-3.5" /> Open PDF
               </Button>
             )}
+
+            <Link to="/library">
+              <Button size="sm" variant="ghost" className="text-xs text-muted-foreground">
+                View in Library <ArrowRight className="ml-1 h-3.5 w-3.5" />
+              </Button>
+            </Link>
           </div>
         </div>
 

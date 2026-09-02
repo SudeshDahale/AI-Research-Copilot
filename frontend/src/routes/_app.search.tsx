@@ -91,8 +91,34 @@ function SearchPage() {
 
   // selection for workspace
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const { workspaces, create, addPapers } = useWorkspaces();
   const [wsPickerOpen, setWsPickerOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("arclight-starred-papers");
+      if (raw) setStarredIds(new Set(JSON.parse(raw)));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleStar = (paper: Ranked) => {
+    const next = new Set(starredIds);
+    if (next.has(paper.id)) {
+      next.delete(paper.id);
+    } else {
+      next.add(paper.id);
+      cachePapers([paper]);
+    }
+    setStarredIds(next);
+    try {
+      localStorage.setItem("arclight-starred-papers", JSON.stringify(Array.from(next)));
+    } catch {
+      // ignore
+    }
+  };
 
   const results = useMemo(() => {
     if (!active) return [];
@@ -734,6 +760,8 @@ function SearchPage() {
                       rank={i + 1}
                       checked={selected.has(p.id)}
                       onToggle={() => toggleSelect(p.id)}
+                      isStarred={starredIds.has(p.id)}
+                      onToggleStar={() => toggleStar(p)}
                     />
                   ))}
                 </ul>
@@ -795,16 +823,20 @@ function ResultRow({
   rank,
   checked,
   onToggle,
+  isStarred,
+  onToggleStar,
 }: {
   paper: Ranked;
   rank: number;
   checked: boolean;
   onToggle: () => void;
+  isStarred?: boolean;
+  onToggleStar?: () => void;
 }) {
   const pct = Math.round(paper.score * 100);
   return (
     <li className="group border-b border-border last:border-b-0 hover:bg-muted/40">
-      <div className="grid grid-cols-[24px_32px_1fr_auto] items-start gap-3 px-4 py-3.5">
+      <div className="grid grid-cols-[24px_28px_28px_1fr_auto] items-start gap-2.5 px-4 py-3.5">
         <label className="pt-1" onClick={(e) => e.stopPropagation()}>
           <input
             type="checkbox"
@@ -813,6 +845,17 @@ function ResultRow({
             className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
           />
         </label>
+        <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+          <button
+            onClick={onToggleStar}
+            className={`btn-pop p-0.5 transition-colors ${
+              isStarred ? "text-amber-400" : "text-muted-foreground/40 hover:text-amber-400 opacity-60 group-hover:opacity-100"
+            }`}
+            title={isStarred ? "Starred in library" : "Star and save to library"}
+          >
+            <span className="text-sm">{isStarred ? "★" : "☆"}</span>
+          </button>
+        </div>
         <div className="pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
           {String(rank).padStart(2, "0")}
         </div>

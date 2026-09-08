@@ -1,12 +1,28 @@
-# Environment variables / secrets
-*.env
+# ==========================================
+# Environment variables, Secrets & Keys
+# ==========================================
 .env
-backend/.env
-frontend/.env
-.env.local
-.env.*.local
+.env.*
+*.env
+*.env.*
+*.local
+*.secret
+*.key
+*.pem
+*.cert
+*.crt
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+# Allow example environment files
+!.env.example
+!backend/.env.example
+!frontend/.env.example
 
-# Python
+# ==========================================
+# Python & Virtual Environments
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -16,9 +32,31 @@ backend/venv/
 venv/
 ENV/
 env/
-.pytest_cache/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
 
+# Testing, Coverage & Linters
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+
+# ==========================================
 # Node / Frontend
+# ==========================================
 node_modules/
 frontend/node_modules/
 .output/
@@ -26,9 +64,26 @@ dist/
 .wrangler/
 .nitro/
 *.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# IDE / OS
+# ==========================================
+# Logs & Databases
+# ==========================================
+*.log
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# ==========================================
+# IDE & Operating System
+# ==========================================
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+*.swp
+*~

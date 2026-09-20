@@ -36,10 +36,12 @@ async def search(
         return []
 
     user_info = f"User: {current_user.email}" if current_user else "Guest"
-    logger.info(f"Search request received. Query: '{query}' ({user_info})")
+    logger.info(f"Search request received. Query: '{query}' Page: {payload.page} Limit: {payload.limit} ({user_info})")
 
-    raw_papers, from_cache = await cached_search(query, search_papers)
-    logger.info(f"Search for '{query}': {'cache HIT' if from_cache else 'cache MISS'}, {len(raw_papers)} raw results")
+    raw_papers, from_cache = await cached_search(
+        query, search_papers, page=payload.page, limit=payload.limit
+    )
+    logger.info(f"Search for '{query}' (p{payload.page}): {'cache HIT' if from_cache else 'cache MISS'}, {len(raw_papers)} raw results")
 
     # One embedding call for the query itself; returns None gracefully if
     # VOYAGE_API_KEY isn't set.
@@ -52,5 +54,7 @@ async def search(
         if p["id"] in embeddings_by_id:
             p["embedding"] = embeddings_by_id[p["id"]]
 
-    ranked = rank_papers(query, raw_papers, query_embedding)
+    ranked = rank_papers(
+        query, raw_papers, query_embedding, min_relevance=payload.min_relevance
+    )
     return ranked

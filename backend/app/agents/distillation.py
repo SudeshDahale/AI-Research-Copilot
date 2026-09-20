@@ -23,9 +23,16 @@ def _extract_sentences(text: str) -> list[str]:
 @lru_cache(maxsize=1024)
 def distill_paper(paper_id: str, title: str, abstract: str, year: int | None = None) -> str:
     """Produce a high-density, 1-2 sentence distilled summary of a paper.
-    
+
     Format:
     [Title (Year)]: <Objective / Core Method> -> <Key Result / Impact>
+
+    Cache note: The cache key includes (paper_id, title, abstract, year), so a
+    paper whose abstract changes in the DB (via upsert) will correctly produce
+    a cache MISS for the new abstract — but the old entry for the previous
+    abstract content remains resident until evicted by LRU (maxsize=1024).
+    This is acceptable for a within-process read-through cache. On deployment
+    restarts the cache is always cold.
     """
     sentences = _extract_sentences(abstract)
     if not sentences:
@@ -33,7 +40,7 @@ def distill_paper(paper_id: str, title: str, abstract: str, year: int | None = N
 
     # First sentence is usually the objective/background
     objective = sentences[0]
-    
+
     # Last sentence is usually the main finding/conclusion
     conclusion = sentences[-1] if len(sentences) > 1 else ""
 

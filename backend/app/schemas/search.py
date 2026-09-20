@@ -27,3 +27,6 @@ class PaperSchema(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
+    page: int = 1
+    limit: int = 30
+    min_relevance: float = 0.0

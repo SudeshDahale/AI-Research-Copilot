@@ -173,6 +173,11 @@ async def run_agent(
             })
         except Exception as exc:
             logger.error(f"Deep pipeline execution error: {exc}", exc_info=True)
+            # Bug fix: client was never told the deep analysis failed — surface it via SSE.
+            yield _sse("error", {
+                "code": "deep_pipeline_error",
+                "message": "Deep analysis encountered an error; showing fast response only.",
+            })
 
         # Fallback compatibility event for clients listening to 'completed'
         final_answer = deep_final_text or fast_text

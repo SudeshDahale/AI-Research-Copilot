@@ -78,24 +78,24 @@ async def cache_set(key: str, value: Any, ttl: int = SEARCH_TTL_SECONDS) -> None
 async def cached_search(
     query: str,
     fetch_fn: Callable[..., Awaitable[list[dict]]],
+    page: int = 1,
+    limit: int = 30,
 ) -> tuple[list[dict], bool]:
     """Return (results, from_cache).
 
-    *fetch_fn* is called only on a cache miss.  The results are cached under
-    a key derived from *query* with a short TTL so repeated identical queries
+    *fetch_fn* is called only on a cache miss. The results are cached under
+    a key derived from *query*, *page*, and *limit* with a short TTL so repeated identical queries
     skip the external arXiv / Semantic Scholar round-trip entirely.
-
-    The boolean second element lets callers (and log lines) distinguish a
-    cache hit from a fresh fetch — useful for verifying Sprint 4's DoD.
     """
-    key = _make_key("search", query.lower().strip())
+    raw_key = f"{query.lower().strip()}:p{page}:l{limit}"
+    key = _make_key("search", raw_key)
 
     hit = await cache_get(key)
     if hit is not None:
-        logger.info(f"Cache HIT for search query='{query}' key={key}")
+        logger.info(f"Cache HIT for search key='{raw_key}'")
         return hit, True
 
-    logger.info(f"Cache MISS for search query='{query}' — calling external APIs")
-    results = await fetch_fn(query)
+    logger.info(f"Cache MISS for search key='{raw_key}' — calling external APIs")
+    results = await fetch_fn(query, page=page, limit=limit)
     await cache_set(key, results)
     return results, False

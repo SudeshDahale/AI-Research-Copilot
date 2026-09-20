@@ -53,7 +53,7 @@ async def summary_node(state: AgentState) -> dict:
             "key_findings": ["See individual papers for specific findings."],
         }
     elif workspace_id:
-                cache.set_corpus_cache(f"{workspace_id}:summary", len(papers), result, fingerprint)
+        cache.set_corpus_cache(f"{workspace_id}:summary", len(papers), result, fingerprint)
 
     elapsed = round((time.monotonic() - t0) * 1000)
     logger.info(f"summary_node: done in {elapsed}ms papers={len(papers)}")

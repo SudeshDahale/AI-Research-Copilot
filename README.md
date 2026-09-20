@@ -31,7 +31,7 @@ An AI-powered research copilot for discovering, curating, and analyzing scientif
 - **PostgreSQL `pgvector`**: High-performance nearest-neighbor cosine similarity search using HNSW indexing (`vector_cosine_ops`).
 - **Find Similar Papers**: `GET /api/v1/papers/{id}/similar` returns topically related papers based on deep semantic meaning.
 
-### 4. LangGraph Research Agent — Dual-Pipeline Architecture
+### 4. LangGraph Research Agent — Dual-Pipeline Architecture1
 - **Fast Pipeline**: streams a synthesized, directly-formatted answer to the user within 1–2 seconds via token streaming, using a context-distillation layer with strict token budgeting.
 - **Deep Pipeline**: runs in parallel against the same in-memory papers (no re-retrieval), dispatching to an intent-specific analysis node — `summary`, `gaps`, `compare`, `contradictions`, or `literature_review` — chosen by `router.detect_intent()`.
 - Single LangGraph state machine (`retrieve → [intent node] → compose`) backs the deep pipeline: `app/agents/graph.py`.

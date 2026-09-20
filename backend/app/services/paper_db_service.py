@@ -7,11 +7,14 @@ the durable half of that two-lifetime design.
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.paper import Paper
+
+_CURRENT_YEAR = datetime.now().year
 
 
 async def upsert_paper(db: AsyncSession, paper_data: dict) -> Paper:
@@ -30,7 +33,7 @@ async def upsert_paper(db: AsyncSession, paper_data: dict) -> Paper:
         "title":    paper_data.get("title") or "",
         "abstract": paper_data.get("abstract") or "",
         "authors":  json.dumps(paper_data.get("authors") or []),
-        "year":     int(paper_data.get("year") or 2024),
+        "year":     int(paper_data.get("year") or _CURRENT_YEAR),  # Bug fix: was hardcoded to 2024
         "journal":  paper_data.get("journal") or "",
         "citations": int(paper_data.get("citations") or 0),
         "doi":      paper_data.get("doi") or "",

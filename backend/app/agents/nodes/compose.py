@@ -6,6 +6,8 @@ unknown intents as summaries.
 """
 from __future__ import annotations
 
+import time
+
 from app.agents.state import AgentState
 from app.core.logging import logger
 
@@ -24,6 +26,7 @@ def _reference_list(papers: list[dict], n: int = 10) -> str:
 
 
 async def compose_node(state: AgentState) -> dict:
+    t0 = time.monotonic()
     intent = state.get("intent", "generic")
     papers = state.get("papers") or []
     result = state.get("result") or {}
@@ -36,18 +39,23 @@ async def compose_node(state: AgentState) -> dict:
                 "⚠️ **Empty workspace**\n\n"
                 "This workspace has no papers yet. "
                 "Add papers to your workspace first, then run the agent again."
-            )
+            ),
+            "metrics": {"compose_ms": round((time.monotonic() - t0) * 1000)},
         }
 
     if error:
-        return {"final_text": f"⚠️ **Error**: {error}"}
+        return {
+            "final_text": f"⚠️ **Error**: {error}",
+            "metrics": {"compose_ms": round((time.monotonic() - t0) * 1000)},
+        }
 
     if not papers:
         return {
             "final_text": (
                 "No papers found in scope. "
                 "Try adding papers to your workspace or broadening your query."
-            )
+            ),
+            "metrics": {"compose_ms": round((time.monotonic() - t0) * 1000)},
         }
 
     refs = _reference_list(papers)
@@ -229,4 +237,8 @@ async def compose_node(state: AgentState) -> dict:
             f"### Papers ({len(papers)})\n{refs}"
         )
 
-    return {"final_text": text}
+    # Bug fix: previously returned only {"final_text": text} with no timing data.
+    # Now merges compose elapsed time with incoming pipeline metrics.
+    elapsed = round((time.monotonic() - t0) * 1000)
+    existing_metrics = state.get("metrics") or {}
+    return {"final_text": text, "metrics": {**existing_metrics, "compose_ms": elapsed}}

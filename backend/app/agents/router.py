@@ -1,5 +1,5 @@
 import re
-from app.services import llm_service
+import app.services.llm_service as llm_service
 from app.core.logging import logger
 
 def detect_intent_rules(query: str) -> str | None:

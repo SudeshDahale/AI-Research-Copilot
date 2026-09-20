@@ -25,6 +25,12 @@ _client: voyageai.AsyncClient | None = None
 def _get_client() -> voyageai.AsyncClient:
     global _client
     if _client is None:
+        # Bug fix: previously created a client even when api_key was empty,
+        # deferring the failure to the first API call with a confusing auth error.
+        if not settings.voyage_api_key:
+            raise ValueError(
+                "VOYAGE_API_KEY is not configured. Set it in your .env file to enable embeddings."
+            )
         _client = voyageai.AsyncClient(api_key=settings.voyage_api_key)
     return _client
 

@@ -109,7 +109,7 @@ async def test_search_and_caching_integration_flow():
         }
     ]
 
-    async def mock_cached_search(query, search_fn):
+    async def mock_cached_search(query, search_fn, *args, **kwargs):
         return mock_papers, False
 
     async def mock_embed_text(text, input_type="query"):

@@ -19,6 +19,10 @@ import {
   Tag,
   BookMarked,
   Layers,
+  Sparkles,
+  Trash2,
+  HardDrive,
+  Filter,
 } from "lucide-react";
 import { MOCK_PAPERS, type Paper } from "@/lib/mock-data";
 import { getCachedPapers, cachePapers } from "@/lib/paper-cache";
@@ -73,6 +77,7 @@ function LibraryPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [sort, setSort] = useState<SortKey>("added");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
@@ -92,7 +97,7 @@ function LibraryPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // Aggregate papers from all user workspaces and local paper cache
+  // Aggregate papers strictly from user workspaces, starred items, and reading queue (prevent raw search cache bloat)
   const [papersState, setPapersState] = useState<Paper[]>([]);
 
   useEffect(() => {
@@ -107,14 +112,63 @@ function LibraryPage() {
       // ignore
     }
 
+    const currentStarred = getStarredPaperIds();
+    const starredSet = new Set(currentStarred);
+    const wsPaperIdSet = new Set(allWsPaperIds);
+
     const map = new Map<string, Paper>();
-    // Cached papers from searches, stars, and views
-    for (const p of Object.values(cachedMap)) map.set(p.id, p);
-    // Real workspace-saved papers from backend
-    for (const p of wsPapers) map.set(p.id, p);
+
+    // 1. Add all workspace papers
+    for (const p of wsPapers) {
+      map.set(p.id, p);
+    }
+
+    // 2. Add all explicitly starred or status-tracked papers from cache
+    for (const p of Object.values(cachedMap)) {
+      const isStarred = starredSet.has(p.id);
+      const isTracked = p.status === "reading" || p.status === "read";
+      const isInWorkspace = wsPaperIdSet.has(p.id);
+
+      if (isStarred || isTracked || isInWorkspace) {
+        map.set(p.id, p);
+      }
+    }
 
     setPapersState(Array.from(map.values()));
-  }, [workspaces]);
+  }, [workspaces, starredIds]);
+
+  // Purge unsaved ephemeral search leftovers to reclaim local storage
+  const purgeUnsavedSearchCache = () => {
+    try {
+      const allWsPaperIds = new Set(workspaces.flatMap((w) => w.paperIds || []));
+      const starredSet = new Set(getStarredPaperIds());
+      const stored = localStorage.getItem("arclight-paper-cache");
+      if (!stored) {
+        notify("Cache is already optimal");
+        return;
+      }
+      const cachedMap: Record<string, Paper> = JSON.parse(stored);
+      const cleanedMap: Record<string, Paper> = {};
+      let removedCount = 0;
+      for (const [id, p] of Object.entries(cachedMap)) {
+        if (starredSet.has(id) || allWsPaperIds.has(id) || p.status === "reading" || p.status === "read") {
+          cleanedMap[id] = p;
+        } else {
+          removedCount++;
+        }
+      }
+      localStorage.setItem("arclight-paper-cache", JSON.stringify(cleanedMap));
+      notify(`🧹 Purged ${removedCount} unsaved search papers. Storage freed!`);
+    } catch (err) {
+      console.warn("Failed to purge cache", err);
+    }
+  };
+
+  // Calculate estimated client-side storage usage
+  const estimatedStorageKB = useMemo(() => {
+    const raw = JSON.stringify(papersState);
+    return Math.max(0.1, Math.round((raw.length / 1024) * 10) / 10);
+  }, [papersState]);
 
   // Toggle star status on a paper
   const toggleStar = (id: string, e?: React.MouseEvent) => {
@@ -156,6 +210,12 @@ function LibraryPage() {
   const filtered = useMemo(() => {
     const needle = q.toLowerCase().trim();
     let rows = papersState.filter((p) => {
+      // Workspace filter
+      if (selectedWorkspace !== "all") {
+        const targetWs = workspaces.find((w) => w.id === selectedWorkspace);
+        if (!targetWs || !(targetWs.paperIds || []).includes(p.id)) return false;
+      }
+
       // Status filter
       if (status === "starred") {
         if (!starredIds.has(p.id)) return false;
@@ -193,7 +253,7 @@ function LibraryPage() {
       }
     });
     return rows;
-  }, [papersState, q, status, sort, selectedTag, starredIds]);
+  }, [papersState, q, status, sort, selectedTag, starredIds, selectedWorkspace, workspaces]);
 
   const counts = useMemo(
     () => ({
@@ -295,6 +355,21 @@ function LibraryPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Storage footprint & cleanup */}
+          <div className="flex items-center gap-1.5 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1 text-[11px] text-muted-foreground font-mono" title="Curated paper metadata memory footprint">
+            <HardDrive className="h-3 w-3 text-primary" /> {estimatedStorageKB} KB
+          </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={purgeUnsavedSearchCache}
+            className="btn-pop h-8 gap-1 text-xs text-muted-foreground hover:text-foreground"
+            title="Purge unsaved ephemeral search leftovers to reclaim storage"
+          >
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Free Cache
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -402,6 +477,25 @@ function LibraryPage() {
               Read <span className="text-[11px] opacity-60">({counts.read})</span>
             </button>
           </div>
+
+          {/* Workspace Collection Selector */}
+          {workspaces.length > 0 && (
+            <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1 text-xs">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              <select
+                value={selectedWorkspace}
+                onChange={(e) => setSelectedWorkspace(e.target.value)}
+                className="cursor-pointer bg-transparent py-1 text-xs text-foreground focus:outline-none max-w-[150px] truncate"
+              >
+                <option value="all">All Collections</option>
+                {workspaces.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name} ({(w.paperIds || []).length})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Sort selector */}
           <div className="flex items-center gap-1.5 rounded-lg border border-border bg-card/60 px-2.5 py-1 text-xs">

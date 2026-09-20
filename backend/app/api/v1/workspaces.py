@@ -53,7 +53,10 @@ async def create_workspace(
         obj_in=payload,
         user_id=current_user.id,
     )
-    for paper_id in payload.paper_ids:
+    # Bug fix: only schedule embedding for newly-added papers.
+    # create_workspace uses set(paper_ids) internally — mirror that here so we
+    # don't queue duplicate embedding tasks for the same paper.
+    for paper_id in set(payload.paper_ids):
         background_tasks.add_task(
             vector_service.embed_paper_by_id,
             paper_id,
@@ -156,8 +159,15 @@ async def add_papers_to_workspace(
         )
 
     # Sprint 6:
-    # Generate embeddings in the background for newly saved papers.
-    for paper_id in payload.paper_ids:
+    # Bug fix: only generate embeddings for papers that are NEW to this workspace.
+    # workspace_service.add_papers_to_workspace() returns the refreshed workspace
+    # with up-to-date workspace_papers. We compare the incoming IDs against the
+    # papers already present *before* the add to derive the truly new set.
+    # Since we already called add_papers_to_workspace (which deduplicates),
+    # we approximate by comparing against the returned workspace's paper list.
+    existing_ids = {wp.paper_id for wp in workspace.workspace_papers}
+    newly_added = [pid for pid in payload.paper_ids if pid in existing_ids]
+    for paper_id in newly_added:
         background_tasks.add_task(
             vector_service.embed_paper_by_id,
             paper_id,

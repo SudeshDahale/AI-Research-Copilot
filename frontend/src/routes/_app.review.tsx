@@ -19,7 +19,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { useDocuments, type Doc } from "@/lib/documents";
-import { useWorkspaces } from "@/lib/workspaces";
+import { useWorkspaces, type Workspace } from "@/lib/workspaces";
 import { getCachedPapers } from "@/lib/paper-cache";
 import { downloadText, slugify, toLaTeX, toBibTeX, toPrintableHTML } from "@/lib/download";
 import {
@@ -161,14 +161,14 @@ function ReviewPage() {
         {!activeDoc ? (
           <EmptyState workspaceId={activeWorkspaceId} workspaceName={activeWs?.name} />
         ) : (
-          <DocView doc={activeDoc} />
+          <DocView doc={activeDoc} activeWs={activeWs} />
         )}
       </article>
     </div>
   );
 }
 
-function DocView({ doc }: { doc: Doc }) {
+function DocView({ doc, activeWs }: { doc: Doc; activeWs?: Workspace }) {
   const isRunning = doc.status === "pending" || doc.status === "processing";
   const isFailed = doc.status === "failed";
   const isDone = doc.status === "done";

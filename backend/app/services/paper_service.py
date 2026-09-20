@@ -1,20 +1,74 @@
 import asyncio
 import html
 import re
+import uuid
 import xml.etree.ElementTree as ET
 import httpx
+from datetime import datetime
+from app.config import settings
 from app.core.logging import logger
 
-# Set a helpful user agent
+_CURRENT_YEAR = datetime.now().year
+
 HEADERS = {
-    "User-Agent": "ArclightResearchCopilot/0.1 (mailto:contact@arclight.edu)"
+    "User-Agent": "ArclightResearchCopilot/1.0 (https://arclight.edu; mailto:contact@arclight.edu)"
 }
+
+# Academic expansions that preserve core domain nouns
+EXPANSION_RULES = [
+    (r"\b(tech\s+diagrams?|technical\s+diagrams?)\b", "technical diagram UML architecture diagram"),
+    (r"\b(ai\s+assisted|ai\s+powered|ai\s+driven)\b", "AI automated machine learning"),
+    (r"\b(crm\s+systems?|crm)\b", "customer relationship management CRM"),
+    (r"\b(ci\s*/?\s*cd|cicd)\b", "continuous integration continuous delivery CI CD"),
+    (r"\b(devops)\b", "DevOps software engineering automation"),
+    (r"\b(mlops)\b", "MLOps machine learning deployment"),
+    (r"\b(nlp)\b", "natural language processing NLP"),
+    (r"\b(rag)\b", "retrieval augmented generation RAG"),
+    (r"\b(llms?)\b", "large language models LLM"),
+    (r"\b(cv)\b", "computer vision"),
+    (r"\b(rl)\b", "reinforcement learning"),
+    (r"\b(kg)\b", "knowledge graphs"),
+    (r"\b(db|dbs)\b", "database systems"),
+]
+
+
+def expand_query(query: str) -> list[str]:
+    """Generate academic and conceptual expansions for user queries."""
+    if not query:
+        return []
+    
+    variations = [query.strip()]
+    lower_q = query.lower()
+    
+    expanded = lower_q
+    modified = False
+    for pattern, replacement in EXPANSION_RULES:
+        if re.search(pattern, expanded, re.IGNORECASE):
+            expanded = re.sub(pattern, replacement, expanded, flags=re.IGNORECASE)
+            modified = True
+            
+    if modified and expanded.strip() != lower_q.strip():
+        # Clean up duplicate words in expansion
+        words = []
+        for w in expanded.split():
+            if w not in words:
+                words.append(w)
+        variations.append(" ".join(words))
+
+    # Add a clean alphanumeric fallback
+    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", query).strip()
+    if cleaned and cleaned.lower() not in [v.lower() for v in variations]:
+        variations.append(cleaned)
+        
+    return variations
+
 
 def normalize_title(title: str) -> str:
     """Lowercase and remove non-alphanumeric characters for fuzzy matching."""
     if not title:
         return ""
     return "".join(c for c in title.lower() if c.isalnum())
+
 
 def clean_text(text: str | None) -> str:
     """Normalize whitespace and unescape XML/HTML entities."""
@@ -23,31 +77,60 @@ def clean_text(text: str | None) -> str:
     cleaned = " ".join(text.split())
     return html.unescape(cleaned)
 
+
 def parse_arxiv_id(id_url: str) -> str:
     """Extract arXiv ID from standard URLs and format as arx-xxxx-xxxx."""
-    # e.g., http://arxiv.org/abs/2411.01823v1 -> arx-2411-01823
     part = id_url.split("/abs/")[-1]
-    raw_id = part.split("v")[0] # Strip off the version suffix (e.g. v1, v2)
+    raw_id = part.split("v")[0]  # Strip version suffix (e.g. v1, v2)
     formatted = raw_id.replace(".", "-").replace("/", "-")
     return f"arx-{formatted}"
 
-async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
-    """Fetch papers from the arXiv API."""
+
+async def fetch_arxiv(query: str, limit: int = 30, offset: int = 0) -> list[dict]:
+    """Fetch papers from the arXiv API with title/abstract scoping and pagination."""
     url = "https://export.arxiv.org/api/query"
+    clean_q = re.sub(r'["\'+]', " ", query).strip()
+    
+    # arXiv search expression
+    words = [w for w in clean_q.split() if len(w) > 1]
+    if len(words) > 1:
+        search_expr = " AND ".join(f"all:{w}" for w in words)
+    else:
+        search_expr = f"all:{clean_q}" if clean_q else "all:research"
+
     params = {
-        "search_query": f"all:{query}",
+        "search_query": search_expr,
+        "start": offset,
         "max_results": limit
     }
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, headers=HEADERS, timeout=10.0)
-            if response.status_code != 200:
-                logger.warning(f"arXiv API returned status {response.status_code} for query: {query}")
-                return []
-            xml_content = response.text
-    except Exception as e:
-        logger.error(f"Error fetching from arXiv: {e}", exc_info=True)
+    xml_content = ""
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=HEADERS, timeout=12.0)
+                if response.status_code == 200:
+                    xml_content = response.text
+                    break
+                elif response.status_code == 429 and attempt == 0:
+                    logger.warning(f"arXiv rate limited (429), retrying after 1s for: {query}")
+                    await asyncio.sleep(1.0)
+                    continue
+                else:
+                    logger.warning(f"arXiv API returned status {response.status_code} for query: {query}")
+                    return []
+        except httpx.TimeoutException:
+            if attempt == 0:
+                logger.warning(f"arXiv API timeout on attempt 1 for: {query}, retrying...")
+                await asyncio.sleep(1.0)
+                continue
+            logger.error(f"arXiv API timed out for query: {query}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching from arXiv: {e}", exc_info=True)
+            return []
+
+    if not xml_content:
         return []
 
     try:
@@ -65,7 +148,7 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
     for entry in root.findall("atom:entry", ns):
         # 1. ID
         id_elem = entry.find("atom:id", ns)
-        id_val = parse_arxiv_id(id_elem.text) if id_elem is not None and id_elem.text else f"arx-{hash(query)}"
+        id_val = parse_arxiv_id(id_elem.text) if id_elem is not None and id_elem.text else f"arx-{uuid.uuid4().hex[:12]}"
 
         # 2. Title
         title_elem = entry.find("atom:title", ns)
@@ -77,7 +160,7 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
 
         # 4. Year
         published_elem = entry.find("atom:published", ns)
-        year = 2024
+        year = _CURRENT_YEAR
         if published_elem is not None and published_elem.text:
             try:
                 year = int(published_elem.text.split("-")[0])
@@ -104,8 +187,11 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
 
         # 8. PDF URL
         pdf_url = ""
-        if id_val.startswith("arx-"):
-            raw_id = id_val.replace("arx-", "").replace("-", ".")
+        if id_elem is not None and id_elem.text and "/abs/" in id_elem.text:
+            raw_arxiv_path = id_elem.text.split("/abs/")[-1].split("v")[0]
+            pdf_url = f"https://arxiv.org/pdf/{raw_arxiv_path}.pdf"
+        elif id_val.startswith("arx-"):
+            raw_id = id_val[4:].replace("-", ".")
             pdf_url = f"https://arxiv.org/pdf/{raw_id}.pdf"
 
         papers.append({
@@ -135,27 +221,52 @@ async def fetch_arxiv(query: str, limit: int = 30) -> list[dict]:
 
     return papers
 
-async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
-    """Fetch papers from the Semantic Scholar API."""
+
+async def fetch_semantic_scholar(query: str, limit: int = 30, offset: int = 0) -> list[dict]:
+    """Fetch papers from the Semantic Scholar API with retry, API key, and pagination."""
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
+    clean_q = re.sub(r'["\'+]', " ", query).strip()
     params = {
-        "query": query,
-        "limit": limit,
+        "query": clean_q,
+        "offset": offset,
+        "limit": min(limit, 100),
         "fields": "title,authors,venue,year,citationCount,abstract,externalIds,openAccessPdf"
     }
+    
+    headers = dict(HEADERS)
+    if settings.semantic_scholar_api_key:
+        headers["x-api-key"] = settings.semantic_scholar_api_key
 
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, headers=HEADERS, timeout=10.0)
-            if response.status_code == 429:
-                logger.warning("Semantic Scholar API rate limited (429).")
-                return []
-            if response.status_code != 200:
-                logger.warning(f"Semantic Scholar API returned status {response.status_code} for query: {query}")
-                return []
-            data = response.json()
-    except Exception as e:
-        logger.error(f"Error fetching from Semantic Scholar: {e}", exc_info=True)
+    data = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params, headers=headers, timeout=12.0)
+                if response.status_code == 200:
+                    data = response.json()
+                    break
+                elif response.status_code == 429 and attempt == 0:
+                    logger.warning("Semantic Scholar API rate limited (429), retrying after 1s...")
+                    await asyncio.sleep(1.0)
+                    continue
+                elif response.status_code == 429:
+                    logger.warning("Semantic Scholar API rate limited (429).")
+                    return []
+                else:
+                    logger.warning(f"Semantic Scholar API returned status {response.status_code} for query: {query}")
+                    return []
+        except httpx.TimeoutException:
+            if attempt == 0:
+                logger.warning(f"Semantic Scholar timeout on attempt 1 for: {query}, retrying...")
+                await asyncio.sleep(1.0)
+                continue
+            logger.error(f"Semantic Scholar API timed out for query: {query}")
+            return []
+        except Exception as e:
+            logger.error(f"Error fetching from Semantic Scholar: {e}", exc_info=True)
+            return []
+
+    if not data:
         return []
 
     papers = []
@@ -164,7 +275,6 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
         doi = external_ids.get("DOI") or ""
         arxiv_id = external_ids.get("ArXiv") or ""
 
-        # Format ID: prefer arXiv format if it has ArXiv ID
         if arxiv_id:
             formatted_arxiv = arxiv_id.replace(".", "-").replace("/", "-")
             id_val = f"arx-{formatted_arxiv}"
@@ -173,7 +283,7 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
 
         title = clean_text(item.get("title"))
         abstract = clean_text(item.get("abstract"))
-        year = item.get("year") or 2024
+        year = item.get("year") or _CURRENT_YEAR
         citations = item.get("citationCount") or 0
         journal = clean_text(item.get("venue")) or "Semantic Scholar"
 
@@ -212,12 +322,13 @@ async def fetch_semantic_scholar(query: str, limit: int = 30) -> list[dict]:
 
     return papers
 
+
 def merge_papers(p1: dict, p2: dict) -> dict:
     """Merge data from two sources for the same paper, prioritizing higher quality signals."""
     merged = {}
     merged["title"] = p1.get("title") or p2.get("title") or ""
     merged["abstract"] = p1.get("abstract") or p2.get("abstract") or ""
-    merged["year"] = p1.get("year") or p2.get("year") or 2024
+    merged["year"] = p1.get("year") or p2.get("year") or _CURRENT_YEAR
     
     a1 = p1.get("authors") or []
     a2 = p2.get("authors") or []
@@ -274,8 +385,9 @@ def merge_papers(p1: dict, p2: dict) -> dict:
     
     return merged
 
+
 def deduplicate_papers(papers: list[dict]) -> list[dict]:
-    """Deduplicate papers using DOI, exact ID, or fuzzy title matching."""
+    """Deduplicate papers using DOI, exact ID, or normalized title matching."""
     merged_list = []
     for paper in papers:
         match_idx = -1
@@ -305,10 +417,15 @@ def deduplicate_papers(papers: list[dict]) -> list[dict]:
             
     return merged_list
 
-async def search_papers(query: str, limit: int = 30) -> list[dict]:
-    """Perform concurrent fetch from arXiv and Semantic Scholar, then merge results."""
-    arxiv_task = fetch_arxiv(query, limit)
-    s2_task = fetch_semantic_scholar(query, limit)
+
+async def search_papers(query: str, page: int = 1, limit: int = 30) -> list[dict]:
+    """Perform concurrent fetch from arXiv and Semantic Scholar with pagination and query expansion."""
+    expansions = expand_query(query)
+    primary_query = expansions[0] if expansions else query
+    offset = max(0, (page - 1) * limit)
+
+    arxiv_task = fetch_arxiv(primary_query, limit=limit, offset=offset)
+    s2_task = fetch_semantic_scholar(primary_query, limit=limit, offset=offset)
     
     results = await asyncio.gather(arxiv_task, s2_task, return_exceptions=True)
     
@@ -321,4 +438,19 @@ async def search_papers(query: str, limit: int = 30) -> list[dict]:
         logger.error(f"Semantic Scholar query exception: {results[1]}")
         
     all_papers = arxiv_papers + s2_papers
-    return deduplicate_papers(all_papers)
+    deduped = deduplicate_papers(all_papers)
+
+    # If first page returned sparse results, fallback to academic expansion
+    if page == 1 and len(deduped) < 5 and len(expansions) > 1:
+        fallback_tasks = []
+        for alt_query in expansions[1:]:
+            fallback_tasks.append(fetch_arxiv(alt_query, limit=limit, offset=0))
+            fallback_tasks.append(fetch_semantic_scholar(alt_query, limit=limit, offset=0))
+        
+        fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
+        for fb in fallback_results:
+            if isinstance(fb, list):
+                all_papers.extend(fb)
+        deduped = deduplicate_papers(all_papers)
+
+    return deduped

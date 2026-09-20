@@ -21,7 +21,7 @@ _ANALYZE_LABELS = {
     "gaps": "Identifying deep research gaps",
     "compare": "Comparing methodologies and benchmarks",
     "contradictions": "Analyzing contradictions and nuances",
-    "review": "Drafting structured literature review",
+    "literature_review": "Drafting structured literature review",  # key matches the intent string
 }
 
 _NODE_MAP = {
@@ -29,7 +29,7 @@ _NODE_MAP = {
     "gaps": (gaps_node, "gaps", _ANALYZE_LABELS["gaps"]),
     "compare": (compare_node, "compare", _ANALYZE_LABELS["compare"]),
     "contradictions": (contradiction_node, "contradictions", _ANALYZE_LABELS["contradictions"]),
-    "literature_review": (review_node, "review", _ANALYZE_LABELS["review"]),
+    "literature_review": (review_node, "review", _ANALYZE_LABELS["literature_review"]),
     "generic": (summary_node, "summary", _ANALYZE_LABELS["summary"]),
 }
 

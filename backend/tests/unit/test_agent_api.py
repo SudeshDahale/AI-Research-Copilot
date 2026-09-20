@@ -29,28 +29,31 @@ async def test_agent_run_endpoint_streaming():
             "error": None,
         }
 
-    with (
-        patch("app.api.v1.agent.retrieve_node", side_effect=mock_retrieve),
-        patch("app.api.v1.agent.stream_fast_pipeline", side_effect=mock_fast_stream),
-        patch("app.api.v1.agent.run_deep_pipeline_async", side_effect=mock_deep_async),
-    ):
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/api/v1/agent/run",
-                json={"query": "Find research gaps", "workspace_id": None},
-            )
-            assert response.status_code == 200
-            assert "text/event-stream" in response.headers.get("content-type", "")
-            content = response.text
-            assert "event: thinking" in content
-            assert "event: retrieving" in content
-            assert "event: token" in content
-            assert "event: fast_completed" in content
-            assert "event: refining" in content
-            assert "event: refined_completed" in content
-            assert "event: completed" in content
-            assert "Fast insight." in content
-            assert "## Deep Research Report" in content
-
-    app.dependency_overrides.clear()
+    try:
+        with (
+            patch("app.api.v1.agent.retrieve_node", side_effect=mock_retrieve),
+            patch("app.api.v1.agent.stream_fast_pipeline", side_effect=mock_fast_stream),
+            patch("app.api.v1.agent.run_deep_pipeline_async", side_effect=mock_deep_async),
+        ):
+            transport = ASGITransport(app=app)
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                response = await client.post(
+                    "/api/v1/agent/run",
+                    json={"query": "Find research gaps", "workspace_id": None},
+                )
+                assert response.status_code == 200
+                assert "text/event-stream" in response.headers.get("content-type", "")
+                content = response.text
+                assert "event: thinking" in content
+                assert "event: retrieving" in content
+                assert "event: token" in content
+                assert "event: fast_completed" in content
+                assert "event: refining" in content
+                assert "event: refined_completed" in content
+                assert "event: completed" in content
+                assert "Fast insight." in content
+                assert "## Deep Research Report" in content
+    finally:
+        # Bug fix: was called only at end of function body — if any assertion above
+        # raised, overrides would leak and pollute subsequent tests.
+        app.dependency_overrides.clear()

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   Search as SearchIcon,
   ArrowRight,
@@ -7,12 +7,20 @@ import {
   SlidersHorizontal,
   Check,
   FolderPlus,
+  FileText,
+  BookOpen,
+  History,
+  Clock,
+  X,
+  Trash2,
   Plus,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { MOCK_PAPERS, type Paper } from "@/lib/mock-data";
 import { type Ranked } from "@/lib/rank";
 import { apiFetch, apiStream } from "@/lib/api";
-import { downloadText, slugify, stamp } from "@/lib/download";
+import { downloadText, slugify, stamp, toBibTeX } from "@/lib/download";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
@@ -46,39 +54,65 @@ const SUGGESTIONS = [
   "autonomous literature review agents",
 ];
 
-const ALL_TAGS = [
-  "RAG",
+const ACADEMIC_FIELDS = [
+  { id: "cs.AI", label: "AI (cs.AI)" },
+  { id: "cs.CL", label: "NLP / Language (cs.CL)" },
+  { id: "cs.CV", label: "Computer Vision (cs.CV)" },
+  { id: "cs.LG", label: "Machine Learning (cs.LG)" },
+  { id: "cs.SE", label: "Software Eng (cs.SE)" },
+  { id: "cs.IR", label: "Info Retrieval (cs.IR)" },
+  { id: "cs.HC", label: "HCI (cs.HC)" },
+  { id: "stat.ML", label: "Stat ML (stat.ML)" },
+  { id: "cs.DC", label: "Distributed (cs.DC)" },
+  { id: "quant-ph", label: "Quantum (quant-ph)" },
+];
+
+const COMMON_TOPICS = [
   "LLM",
-  "Retrieval",
-  "Graph",
-  "Evaluation",
-  "Agents",
-  "Embeddings",
-  "Benchmark",
-  "Multimodal",
+  "RAG",
+  "Agent",
   "Reasoning",
+  "Benchmark",
+  "Evaluation",
+  "Graph",
+  "Embeddings",
+  "Multimodal",
+  "UML",
 ];
-const ALL_VENUES = [
-  "NeurIPS",
-  "ICML",
-  "ICLR",
-  "ACL",
-  "EMNLP",
-  "AAAI",
-  "TACL",
-  "Nature",
-  "Science",
-  "JMLR",
-];
+
+const SEARCH_HISTORY_KEY = "arclight-recent-searches";
+
+export function getSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveSearchHistory(history: string[]) {
+  try {
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, 5)));
+  } catch (err) {
+    console.warn("Failed to persist search history", err);
+  }
+}
 
 function SearchPage() {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState("");
   const [showFilters, setShowFilters] = useState(true);
 
+  // Search history state (Google/YouTube-style recent search suggestions)
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [showHistoryDropdown, setShowHistoryDropdown] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
   // filters
   const [yearRange, setYearRange] = useState<[number, number]>([2019, 2026]);
   const [minCites, setMinCites] = useState(0);
+  const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [selectedVenues, setSelectedVenues] = useState<string[]>([]);
   const [sort, setSort] = useState<"relevance" | "recent" | "cited">("relevance");
@@ -86,8 +120,9 @@ function SearchPage() {
   const [searching, setSearching] = useState(false);
   const [runId, setRunId] = useState(0);
   const [papers, setPapers] = useState<Ranked[]>([]);
-  const [apiLoading, setApiLoading] = useState(false);
-  const [timersDone, setTimersDone] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   // selection for workspace
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -95,7 +130,27 @@ function SearchPage() {
   const { workspaces, create, addPapers } = useWorkspaces();
   const [wsPickerOpen, setWsPickerOpen] = useState(false);
 
+  // Dynamically extract real publication venues from retrieved results
+  const availableVenues = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const p of papers) {
+      if (
+        p.journal &&
+        p.journal.toLowerCase() !== "arxiv" &&
+        p.journal.toLowerCase() !== "semantic scholar"
+      ) {
+        map.set(p.journal, (map.get(p.journal) || 0) + 1);
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name]) => name)
+      .slice(0, 8);
+  }, [papers]);
+
+  // Load search history and starred papers on mount
   useEffect(() => {
+    setSearchHistory(getSearchHistory());
     try {
       const raw = localStorage.getItem("arclight-starred-papers");
       if (raw) setStarredIds(new Set(JSON.parse(raw)));
@@ -103,6 +158,35 @@ function SearchPage() {
       // ignore
     }
   }, []);
+
+  // Close history dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target as Node)
+      ) {
+        setShowHistoryDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // History management helpers
+  const removeHistoryItem = (itemToRemove: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = searchHistory.filter((item) => item !== itemToRemove);
+    setSearchHistory(next);
+    saveSearchHistory(next);
+  };
+
+  const clearAllHistory = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSearchHistory([]);
+    saveSearchHistory([]);
+    setShowHistoryDropdown(false);
+  };
 
   const toggleStar = (paper: Ranked) => {
     const next = new Set(starredIds);
@@ -122,42 +206,65 @@ function SearchPage() {
 
   const results = useMemo(() => {
     if (!active) return [];
-    const filtered = papers.filter(
-      (p) =>
-        p.year >= yearRange[0] &&
-        p.year <= yearRange[1] &&
-        p.citations >= minCites &&
-        (selectedTags.length === 0 || p.tags.some((t) => selectedTags.includes(t))) &&
-        (selectedVenues.length === 0 || selectedVenues.includes(p.journal)),
-    );
-    const ranked = filtered.filter((p) => p.score > 0.14);
+    const filtered = papers.filter((p) => {
+      if (p.year < yearRange[0] || p.year > yearRange[1]) return false;
+      if (p.citations < minCites) return false;
+      if (
+        selectedFields.length > 0 &&
+        !p.tags.some((t) => selectedFields.some((f) => t.toLowerCase().includes(f.toLowerCase())))
+      ) {
+        return false;
+      }
+      if (
+        selectedTags.length > 0 &&
+        !selectedTags.some(
+          (tag) =>
+            p.tags.some((t) => t.toLowerCase().includes(tag.toLowerCase())) ||
+            p.title.toLowerCase().includes(tag.toLowerCase()) ||
+            p.abstract.toLowerCase().includes(tag.toLowerCase()),
+        )
+      ) {
+        return false;
+      }
+      if (selectedVenues.length > 0 && !selectedVenues.includes(p.journal)) {
+        return false;
+      }
+      return true;
+    });
+
+    const minScore = papers.length > 0 && papers[0].score < 0.25 ? 0.04 : 0.14;
+    const ranked = filtered.filter((p) => p.score > minScore);
     if (sort === "relevance") ranked.sort((a, b) => b.score - a.score);
     if (sort === "recent") ranked.sort((a, b) => b.year - a.year);
     if (sort === "cited") ranked.sort((a, b) => b.citations - a.citations);
     return ranked;
-  }, [active, papers, yearRange, minCites, selectedTags, selectedVenues, sort]);
+  }, [active, papers, yearRange, minCites, selectedFields, selectedTags, selectedVenues, sort]);
 
   useEffect(() => setSelected(new Set()), [active]);
 
-  useEffect(() => {
-    if (timersDone && !apiLoading) {
-      setSearching(false);
-    }
-  }, [timersDone, apiLoading]);
-
   const runSearch = async (q: string) => {
     if (!q.trim()) return;
-    setQuery(q);
-    setActive(q);
+    const cleanQ = q.trim();
+    setQuery(cleanQ);
+    setActive(cleanQ);
+    setShowHistoryDropdown(false);
+
+    // Save search history (up to 5 items, deduplicated)
+    setSearchHistory((prev) => {
+      const next = [cleanQ, ...prev.filter((item) => item.toLowerCase() !== cleanQ.toLowerCase())].slice(0, 5);
+      saveSearchHistory(next);
+      return next;
+    });
+
     setSearching(true);
-    setTimersDone(false);
-    setApiLoading(true);
+    setPage(1);
+    setHasMore(true);
     setRunId((n) => n + 1);
 
     try {
       const data = await apiFetch<(Paper & { relevance?: number; pdf_url?: string })[]>("/search", {
         method: "POST",
-        body: JSON.stringify({ query: q }),
+        body: JSON.stringify({ query: cleanQ, page: 1, limit: 30 }),
       });
       const mapped = data.map((p) => ({
         ...p,
@@ -166,11 +273,53 @@ function SearchPage() {
       }));
       setPapers(mapped);
       cachePapers(mapped);
+      if (data.length < 15) {
+        setHasMore(false);
+      }
     } catch (err) {
       console.error("Search failed:", err);
       setPapers([]);
+      setHasMore(false);
     } finally {
-      setApiLoading(false);
+      setSearching(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (!active || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    try {
+      const data = await apiFetch<(Paper & { relevance?: number; pdf_url?: string })[]>("/search", {
+        method: "POST",
+        body: JSON.stringify({ query: active, page: nextPage, limit: 30 }),
+      });
+      if (!data || data.length === 0) {
+        setHasMore(false);
+        return;
+      }
+      const mapped = data.map((p) => ({
+        ...p,
+        score: p.relevance ?? 0.0,
+        pdfUrl: p.pdf_url,
+      }));
+      setPapers((prev) => {
+        const existingIds = new Set(prev.map((p) => p.id));
+        const fresh = mapped.filter((p) => !existingIds.has(p.id));
+        if (fresh.length === 0) setHasMore(false);
+        const combined = [...prev, ...fresh];
+        cachePapers(combined);
+        return combined;
+      });
+      setPage(nextPage);
+      if (data.length < 10) {
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error("Load more failed:", err);
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -462,17 +611,80 @@ function SearchPage() {
             e.preventDefault();
             runSearch(query);
           }}
-          className="flex gap-2"
+          className="relative flex gap-2"
         >
-          <div className="relative flex-1">
+          <div ref={searchContainerRef} className="relative flex-1">
             <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setShowHistoryDropdown(true);
+              }}
+              onFocus={() => {
+                if (searchHistory.length > 0) {
+                  setShowHistoryDropdown(true);
+                }
+              }}
               placeholder="e.g. reducing hallucinations in scientific LLMs with retrieval"
-              className="h-12 bg-card pl-9 text-base shadow-md"
+              className="h-12 bg-card pl-9 pr-14 text-base shadow-md"
               autoFocus
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            )}
+
+            {/* Google / YouTube style Search History Dropdown */}
+            {showHistoryDropdown && searchHistory.length > 0 && (
+              <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-50 overflow-hidden rounded-xl border border-border/80 bg-card/95 p-1 shadow-2xl backdrop-blur-md animate-in fade-in slide-in-from-top-1">
+                <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/80 border-b border-border/40">
+                  <span className="flex items-center gap-1.5">
+                    <History className="h-3 w-3 text-accent" /> Recent Searches
+                  </span>
+                  <button
+                    type="button"
+                    onClick={clearAllHistory}
+                    className="text-[10px] text-muted-foreground hover:text-destructive transition-colors"
+                  >
+                    Clear all
+                  </button>
+                </div>
+                <div className="py-1">
+                  {searchHistory
+                    .filter((item) => !query.trim() || item.toLowerCase().includes(query.toLowerCase().trim()))
+                    .slice(0, 5)
+                    .map((item) => (
+                      <div
+                        key={item}
+                        onClick={() => {
+                          setQuery(item);
+                          runSearch(item);
+                        }}
+                        className="group flex items-center justify-between rounded-lg px-3 py-2 text-sm text-foreground/90 transition-colors hover:bg-accent/10 hover:text-accent cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2.5 overflow-hidden">
+                          <Clock className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground group-hover:text-accent transition-colors" />
+                          <span className="truncate font-medium text-xs sm:text-sm">{item}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => removeHistoryItem(item, e)}
+                          className="rounded p-1 text-muted-foreground/50 opacity-0 group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                          title="Remove from history"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
           <Button type="submit" size="lg" className="btn-pop h-12 px-5 shadow-md">
             {searching ? (
@@ -529,6 +741,7 @@ function SearchPage() {
                   onClick={() => {
                     setYearRange([2019, 2026]);
                     setMinCites(0);
+                    setSelectedFields([]);
                     setSelectedTags([]);
                     setSelectedVenues([]);
                     setSort("relevance");
@@ -587,9 +800,30 @@ function SearchPage() {
                 />
               </FilterBlock>
 
+              <FilterBlock label="Academic Fields">
+                <div className="flex flex-wrap gap-1">
+                  {ACADEMIC_FIELDS.map((f) => {
+                    const on = selectedFields.includes(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setSelectedFields((a) => toggle(a, f.id))}
+                        className={`btn-pop rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                          on
+                            ? "border-accent bg-accent text-accent-foreground"
+                            : "border-border bg-background text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </FilterBlock>
+
               <FilterBlock label="Topics">
                 <div className="flex flex-wrap gap-1">
-                  {ALL_TAGS.map((t) => {
+                  {COMMON_TOPICS.map((t) => {
                     const on = selectedTags.includes(t);
                     return (
                       <button
@@ -608,53 +842,57 @@ function SearchPage() {
                 </div>
               </FilterBlock>
 
-              <FilterBlock label="Venues">
-                <div className="space-y-1">
-                  {ALL_VENUES.slice(0, 8).map((v) => {
-                    const on = selectedVenues.includes(v);
-                    return (
-                      <label
-                        key={v}
-                        className="flex cursor-pointer items-center gap-2 text-xs text-foreground/80"
-                        onClick={() => setSelectedVenues((a) => toggle(a, v))}
-                      >
-                        <span
-                          className={`grid h-4 w-4 place-items-center rounded border transition-colors ${
-                            on ? "border-accent bg-accent" : "border-border bg-background"
-                          }`}
+              {availableVenues.length > 0 && (
+                <FilterBlock label="Discovered Venues">
+                  <div className="space-y-1">
+                    {availableVenues.map((v) => {
+                      const on = selectedVenues.includes(v);
+                      return (
+                        <label
+                          key={v}
+                          className="flex cursor-pointer items-center gap-2 text-xs text-foreground/80"
+                          onClick={() => setSelectedVenues((a) => toggle(a, v))}
                         >
-                          {on && <Check className="h-3 w-3 text-accent-foreground" />}
-                        </span>
-                        <span>{v}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </FilterBlock>
+                          <span
+                            className={`grid h-4 w-4 place-items-center rounded border transition-colors ${
+                              on ? "border-accent bg-accent" : "border-border bg-background"
+                            }`}
+                          >
+                            {on && <Check className="h-3 w-3 text-accent-foreground" />}
+                          </span>
+                          <span className="truncate">{v}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </FilterBlock>
+              )}
             </aside>
           )}
 
-          {/* Results — with the agent's live plan running in the centre */}
+          {/* Results section */}
           <section className={showFilters ? "" : "lg:col-start-1 lg:col-end-3"}>
             {searching ? (
-              <div className="flex min-h-[62vh] items-center justify-center px-2">
-                <div className="w-full max-w-md animate-in fade-in zoom-in-95 duration-300">
-                  <div className="mb-4 text-center">
-                    <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                      <span className="live-dot" /> Agent working
-                    </div>
-                    <h2 className="font-display text-2xl leading-snug">Researching “{active}”</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Executing the retrieval plan step by step.
-                    </p>
+              <div className="mt-4 space-y-3 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between rounded-xl border border-border bg-card/60 px-4 py-3 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                    <span>Querying arXiv & Semantic Scholar in real-time…</span>
                   </div>
-                  <AgentSteps
-                    key={runId}
-                    steps={searchSteps(active, results.length)}
-                    size="lg"
-                    onDone={() => setTimersDone(true)}
-                  />
+                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+                    Retrieving & Ranking
+                  </span>
                 </div>
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="card-3d rounded-xl border border-border bg-card p-4 space-y-2.5 animate-pulse">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="h-4 w-3/4 rounded bg-muted" />
+                      <div className="h-4 w-12 rounded-full bg-muted" />
+                    </div>
+                    <div className="h-3 w-1/2 rounded bg-muted/60" />
+                    <div className="h-10 w-full rounded bg-muted/40" />
+                  </div>
+                ))}
               </div>
             ) : (
               <>
@@ -752,19 +990,67 @@ function SearchPage() {
                   </div>
                 )}
 
-                <ul className="mt-3 card-3d overflow-hidden rounded-xl border border-border bg-card">
-                  {results.slice(0, 40).map((p, i) => (
-                    <ResultRow
-                      key={p.id}
-                      paper={p}
-                      rank={i + 1}
-                      checked={selected.has(p.id)}
-                      onToggle={() => toggleSelect(p.id)}
-                      isStarred={starredIds.has(p.id)}
-                      onToggleStar={() => toggleStar(p)}
-                    />
-                  ))}
-                </ul>
+                {results.length === 0 ? (
+                  <div className="mt-6 rounded-xl border border-border bg-card/60 p-8 text-center backdrop-blur">
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                      <SearchIcon className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <h3 className="font-display text-lg font-medium">No direct paper matches found</h3>
+                    <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
+                      We searched arXiv and Semantic Scholar for "{active}". Try broadening your terms, clearing filters, or exploring suggested research areas below:
+                    </p>
+                    <div className="mt-4 flex flex-wrap justify-center gap-2">
+                      {SUGGESTIONS.map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => runSearch(s)}
+                          className="btn-pop rounded-full border border-border bg-background px-3 py-1 text-xs text-foreground shadow-sm hover:border-accent hover:text-accent"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <ul className="mt-3 card-3d overflow-hidden rounded-xl border border-border bg-card">
+                      {results.map((p, i) => (
+                        <ResultRow
+                          key={p.id}
+                          paper={p}
+                          rank={i + 1}
+                          checked={selected.has(p.id)}
+                          onToggle={() => toggleSelect(p.id)}
+                          isStarred={starredIds.has(p.id)}
+                          onToggleStar={() => toggleStar(p)}
+                        />
+                      ))}
+                    </ul>
+
+                    {hasMore && (
+                      <div className="mt-4 flex justify-center">
+                        <Button
+                          variant="outline"
+                          onClick={loadMore}
+                          disabled={loadingMore}
+                          className="btn-pop h-9 px-6 text-xs gap-2 border-border shadow-sm hover:border-accent hover:text-accent"
+                        >
+                          {loadingMore ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Fetching more papers from arXiv & Semantic Scholar…
+                            </>
+                          ) : (
+                            <>
+                              <span>Load More Papers (Page {page + 1})</span>
+                              <ArrowRight className="h-3.5 w-3.5" />
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </section>
@@ -833,7 +1119,18 @@ function ResultRow({
   isStarred?: boolean;
   onToggleStar?: () => void;
 }) {
+  const [copiedBib, setCopiedBib] = useState(false);
   const pct = Math.round(paper.score * 100);
+
+  const handleCopyBib = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const bib = toBibTeX([paper]);
+    navigator.clipboard.writeText(bib);
+    setCopiedBib(true);
+    setTimeout(() => setCopiedBib(false), 2000);
+  };
+
   return (
     <li className="group border-b border-border last:border-b-0 hover:bg-muted/40">
       <div className="grid grid-cols-[24px_28px_28px_1fr_auto] items-start gap-2.5 px-4 py-3.5">
@@ -861,12 +1158,12 @@ function ResultRow({
         </div>
         <Link to="/papers/$id" params={{ id: paper.id }} className="min-w-0">
           <div className="mb-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span className="text-foreground/70">{paper.journal}</span>
+            <span className="text-foreground/70 font-medium">{paper.journal}</span>
             <span>·</span>
             <span>{paper.year}</span>
             <span>·</span>
             <span>{paper.citations.toLocaleString()} cites</span>
-            {paper.tags.slice(0, 2).map((t) => (
+            {paper.tags.slice(0, 3).map((t) => (
               <span
                 key={t}
                 className="rounded-full border border-border bg-background px-1.5 py-0 text-[10px]"
@@ -878,8 +1175,42 @@ function ResultRow({
           <h3 className="text-[15px] font-medium leading-snug text-foreground group-hover:text-accent">
             {paper.title}
           </h3>
-          <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-            {paper.authors.join(", ")}
+          <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+            <span className="truncate max-w-lg">{paper.authors.join(", ")}</span>
+            <div className="flex items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
+              <button
+                onClick={handleCopyBib}
+                className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
+                title="Copy BibTeX Citation Key"
+              >
+                {copiedBib ? (
+                  <>
+                    <Check className="h-2.5 w-2.5 text-emerald-500" />
+                    <span className="text-emerald-500 font-medium">Copied BibTeX!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-2.5 w-2.5" />
+                    <span>BibTeX</span>
+                  </>
+                )}
+              </button>
+
+              {paper.pdfUrl && (
+                <a
+                  href={paper.pdfUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
+                  title="Open Open-Access PDF"
+                >
+                  <FileText className="h-2.5 w-2.5 text-rose-500" />
+                  <span>PDF</span>
+                  <ExternalLink className="h-2 w-2 opacity-60" />
+                </a>
+              )}
+            </div>
           </div>
           <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">{paper.abstract}</p>
         </Link>

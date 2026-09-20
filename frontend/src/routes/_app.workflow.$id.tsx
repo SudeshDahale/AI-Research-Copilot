@@ -14,7 +14,14 @@ import {
   Code,
   Printer,
   FileCode,
+  Table,
+  Columns,
+  Sparkles,
+  Copy,
+  ExternalLink,
+  Check,
 } from "lucide-react";
+import { type Paper } from "@/lib/mock-data";
 import { useWorkspaces } from "@/lib/workspaces";
 import { useDocuments, type Doc } from "@/lib/documents";
 import { getCachedPapers, searchCachedPapers } from "@/lib/paper-cache";
@@ -59,7 +66,7 @@ function WorkspaceDetail() {
   const [name, setName] = useState(ws?.name ?? "");
   const [adding, setAdding] = useState(false);
   const [q, setQ] = useState("");
-  const [tab, setTab] = useState<"papers" | "docs">("papers");
+  const [tab, setTab] = useState<"papers" | "matrix" | "docs">("papers");
   const [openDoc, setOpenDoc] = useState<Doc | null>(null);
   const { docs, create: createDoc, remove: removeDoc } = useDocuments(id);
 
@@ -415,6 +422,7 @@ function WorkspaceDetail() {
             {(
               [
                 ["papers", `Papers in scope (${papers.length})`],
+                ["matrix", "Comparison Matrix"],
                 ["docs", `Documents (${docs.length})`],
               ] as const
             ).map(([key, label]) => (
@@ -429,6 +437,8 @@ function WorkspaceDetail() {
               >
                 {key === "docs" ? (
                   <FileText className="mr-1.5 inline h-3.5 w-3.5" />
+                ) : key === "matrix" ? (
+                  <Table className="mr-1.5 inline h-3.5 w-3.5" />
                 ) : (
                   <FolderKanban className="mr-1.5 inline h-3.5 w-3.5" />
                 )}
@@ -439,6 +449,19 @@ function WorkspaceDetail() {
 
           {tab === "docs" ? (
             <DocumentList docs={docs} onOpen={setOpenDoc} onRemove={removeDoc} />
+          ) : tab === "matrix" ? (
+            <ComparisonMatrix
+              papers={papers}
+              onPromptAgent={(prompt) => {
+                const chatInput = document.querySelector<HTMLTextAreaElement | HTMLInputElement>(
+                  "aside input, aside textarea",
+                );
+                if (chatInput) {
+                  chatInput.value = prompt;
+                  chatInput.focus();
+                }
+              }}
+            />
           ) : (
             <div className="card-3d overflow-hidden rounded-xl border border-border bg-card">
               <div className="border-b border-border px-4 py-2.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -536,6 +559,196 @@ function WorkspaceDetail() {
       </div>
 
       {openDoc && <DocumentViewer doc={openDoc} onClose={() => setOpenDoc(null)} />}
+    </div>
+  );
+}
+
+function ComparisonMatrix({
+  papers,
+  onPromptAgent,
+}: {
+  papers: Paper[];
+  onPromptAgent: (prompt: string) => void;
+}) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  if (papers.length === 0) {
+    return (
+      <div className="card-3d rounded-xl border border-border bg-card p-12 text-center">
+        <Columns className="mx-auto mb-3 h-8 w-8 text-muted-foreground opacity-50" />
+        <h3 className="font-display text-lg">No papers in workspace</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Add at least 2 papers from Discover to generate an interactive comparative analysis matrix.
+        </p>
+      </div>
+    );
+  }
+
+  const exportMatrixMarkdown = () => {
+    let md = `# Research Comparison Matrix\n\n`;
+    md += `| Paper | Year | Method / Architecture | Dataset / Scope | Key Findings | Limitations / Gaps |\n`;
+    md += `| :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+    for (const p of papers) {
+      const title = p.title.replace(/\|/g, "\\|");
+      const method = (p.summary?.methodology || "Described in publication").replace(/\|/g, "\\|");
+      const dataset = (p.summary?.dataset || (p.tags.join(", ") || "General corpus")).replace(/\|/g, "\\|");
+      const results = (p.summary?.results || (p.abstract ? p.abstract.slice(0, 120) + "..." : "—")).replace(/\|/g, "\\|");
+      const gaps = (p.gaps?.length ? p.gaps.join("; ") : (p.summary?.limitations || "See publication")).replace(/\|/g, "\\|");
+      md += `| **${title}** | ${p.year} | ${method} | ${dataset} | ${results} | ${gaps} |\n`;
+    }
+    downloadText(`comparison-matrix-${stamp()}.md`, md, "text/markdown");
+  };
+
+  return (
+    <div className="card-3d overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-card/60 px-4 py-3">
+        <div>
+          <h2 className="font-display text-base font-semibold">Structured Comparison Matrix</h2>
+          <p className="text-[11px] text-muted-foreground">
+            Side-by-side methodology, benchmarks, and research gap breakdown for {papers.length} papers.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportMatrixMarkdown}
+            className="btn-pop h-8 gap-1.5 text-xs shadow-sm"
+          >
+            <Download className="h-3.5 w-3.5" /> Export Matrix (.md)
+          </Button>
+          <Button
+            size="sm"
+            onClick={() =>
+              onPromptAgent(
+                "Compare the methodologies, datasets, key findings, and limitations across the papers in this workspace in a structured summary.",
+              )
+            }
+            className="btn-pop h-8 gap-1.5 text-xs bg-accent text-accent-foreground shadow-sm"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> AI Deep Synthesis
+          </Button>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr className="border-b border-border bg-muted/30 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              <th className="px-4 py-3 min-w-[220px]">Paper & Citation</th>
+              <th className="px-4 py-3 min-w-[180px]">Core Methodology</th>
+              <th className="px-4 py-3 min-w-[150px]">Datasets & Scope</th>
+              <th className="px-4 py-3 min-w-[200px]">Results & Highlights</th>
+              <th className="px-4 py-3 min-w-[180px]">Known Gaps / Limits</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {papers.map((p) => {
+              const hasSummary = p.summary && p.summary.methodology;
+              return (
+                <tr key={p.id} className="hover:bg-muted/20 transition-colors align-top">
+                  <td className="px-4 py-3">
+                    <Link
+                      to="/papers/$id"
+                      params={{ id: p.id }}
+                      className="font-medium text-foreground hover:text-accent leading-snug line-clamp-2"
+                    >
+                      {p.title}
+                    </Link>
+                    <div className="mt-1 text-[11px] text-muted-foreground">
+                      <span>{p.journal}</span> · <span>{p.year}</span> · <span>{p.citations} cites</span>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          const bib = toBibTeX([p]);
+                          navigator.clipboard.writeText(bib);
+                          setCopiedId(p.id);
+                          setTimeout(() => setCopiedId(null), 2000);
+                        }}
+                        className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
+                      >
+                        {copiedId === p.id ? (
+                          <>
+                            <Check className="h-2.5 w-2.5 text-emerald-500" />
+                            <span className="text-emerald-500 font-medium">Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-2.5 w-2.5" />
+                            <span>BibTeX</span>
+                          </>
+                        )}
+                      </button>
+                      {p.pdfUrl && (
+                        <a
+                          href={p.pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
+                        >
+                          <FileText className="h-2.5 w-2.5 text-rose-500" />
+                          <span>PDF</span>
+                          <ExternalLink className="h-2 w-2 opacity-60" />
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground leading-relaxed">
+                    {hasSummary ? (
+                      p.summary.methodology
+                    ) : (
+                      <span className="text-foreground/80">
+                        {p.abstract ? p.abstract.slice(0, 160) + "..." : "Described in paper"}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground leading-relaxed">
+                    {hasSummary && p.summary.dataset ? (
+                      p.summary.dataset
+                    ) : p.tags.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {p.tags.map((t) => (
+                          <span
+                            key={t}
+                            className="rounded-full border border-border bg-background px-1.5 py-0 text-[10px]"
+                          >
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground leading-relaxed">
+                    {hasSummary && p.summary.results ? (
+                      p.summary.results
+                    ) : (
+                      <span className="text-foreground/80">
+                        {p.abstract ? p.abstract.slice(0, 180) + "..." : "—"}
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground leading-relaxed">
+                    {p.gaps && p.gaps.length > 0 ? (
+                      <ul className="list-disc pl-3 space-y-0.5 text-[11px] text-amber-500/90">
+                        {p.gaps.map((g, idx) => (
+                          <li key={idx}>{g}</li>
+                        ))}
+                      </ul>
+                    ) : hasSummary && p.summary.limitations ? (
+                      <span className="text-amber-500/90">{p.summary.limitations}</span>
+                    ) : (
+                      <span className="text-muted-foreground/60 italic">Run AI Gap Analysis</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

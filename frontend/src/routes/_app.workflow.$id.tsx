@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   ArrowLeft,
   Download,
@@ -20,11 +20,12 @@ import {
   Copy,
   ExternalLink,
   Check,
+  Loader2,
 } from "lucide-react";
 import { type Paper } from "@/lib/mock-data";
 import { useWorkspaces } from "@/lib/workspaces";
 import { useDocuments, type Doc } from "@/lib/documents";
-import { getCachedPapers, searchCachedPapers } from "@/lib/paper-cache";
+import { getCachedPapers, searchCachedPapers, cachePapers } from "@/lib/paper-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AgentChat, type StreamCallbacks } from "@/components/agent/AgentChat";
@@ -32,7 +33,8 @@ import { DocumentList, DocumentViewer } from "@/components/DocumentPanel";
 import { type Artifact } from "@/lib/agent-plan";
 import { downloadText, slugify, stamp, toBibTeX, toLaTeX, toPrintableHTML } from "@/lib/download";
 import { buildAgentReply } from "@/lib/agent";
-import { apiStream } from "@/lib/api";
+import { apiFetch, apiStream } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -60,6 +62,7 @@ export const Route = createFileRoute("/_app/workflow/$id")({
 function WorkspaceDetail() {
   const { id } = Route.useParams();
   const { workspaces, rename, remove, removePaper, addPapers } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
   const ws = workspaces.find((w) => w.id === id);
   const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
@@ -70,6 +73,15 @@ function WorkspaceDetail() {
   const [openDoc, setOpenDoc] = useState<Doc | null>(null);
   const { docs, create: createDoc, remove: removeDoc } = useDocuments(id);
 
+  useEffect(() => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to access workspace",
+        message: "Workspaces and scoped research agents require an account to prevent extra token usage. Log in with shlok@mail.com.",
+      });
+    }
+  }, [isGuest, openLoginModal]);
+
   const papers = useMemo(() => (ws ? getCachedPapers(ws.paperIds) : []), [ws]);
 
   const execute = (
@@ -79,6 +91,20 @@ function WorkspaceDetail() {
     callbacks?: StreamCallbacks,
     history?: { role: "user" | "assistant"; content: string }[],
   ) => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to use workspace agent",
+        message: "The scoped workspace agent analyzes papers and generates documents. Please log in with shlok@mail.com.",
+      });
+      return {
+        steps: [{ label: "Authentication required", detail: "Member login required", ms: 0 }],
+        finish: async () => ({
+          text: "Guest mode allows paper searching only. Please log in with **shlok@mail.com** (password: **test@123**) to run the research agent on this workspace.",
+        }),
+        live: false,
+      };
+    }
+
     const wantsDoc = toolId === "doc";
 
     if (wantsDoc) {
@@ -165,10 +191,53 @@ function WorkspaceDetail() {
     return { steps, finish: runAgent, live: true };
   };
 
+  const [liveResults, setLiveResults] = useState<Paper[]>([]);
+  const [searchingLive, setSearchingLive] = useState(false);
+
+  useEffect(() => {
+    if (!q.trim() || !adding) {
+      setLiveResults([]);
+      setSearchingLive(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchingLive(true);
+      try {
+        const data = await apiFetch<(Paper & { relevance?: number; pdf_url?: string })[]>("/search", {
+          method: "POST",
+          body: JSON.stringify({ query: q.trim(), page: 1, limit: 12 }),
+        });
+        const mapped = data.map((p) => ({
+          ...p,
+          score: p.relevance ?? 0.0,
+          pdfUrl: p.pdf_url,
+        }));
+        setLiveResults(mapped);
+        cachePapers(mapped);
+      } catch (err) {
+        console.warn("Live paper search failed:", err);
+      } finally {
+        setSearchingLive(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [q, adding]);
+
   const candidates = useMemo(() => {
     if (!ws) return [];
-    return searchCachedPapers(q, ws.paperIds);
-  }, [ws, q]);
+    const local = searchCachedPapers(q, ws.paperIds);
+    const existingIds = new Set(ws.paperIds);
+    const liveFiltered = liveResults.filter((p) => !existingIds.has(p.id));
+    const seen = new Set<string>();
+    const combined: Paper[] = [];
+    for (const p of [...local, ...liveFiltered]) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id);
+        combined.push(p);
+      }
+    }
+    return combined;
+  }, [ws, q, liveResults]);
 
   if (!ws) {
     return (
@@ -384,13 +453,20 @@ function WorkspaceDetail() {
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
-              <Input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search all papers…"
-                className="h-9 text-sm"
-                autoFocus
-              />
+              <div className="relative">
+                <Input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search all global papers (e.g. LLM reasoning, transformers)…"
+                  className="h-9 pr-8 text-sm"
+                  autoFocus
+                />
+                {searchingLive && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  </div>
+                )}
+              </div>
               <ul className="mt-2 max-h-72 space-y-1 overflow-y-auto">
                 {candidates.map((p) => (
                   <li
@@ -398,21 +474,23 @@ function WorkspaceDetail() {
                     className="flex items-center justify-between gap-2 rounded px-2 py-1.5 hover:bg-muted/60"
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm">{p.title}</div>
+                      <div className="truncate text-sm font-medium">{p.title}</div>
                       <div className="truncate text-[11px] text-muted-foreground">
-                        {p.journal} · {p.year}
+                        {p.journal || "Academic Publication"} · {p.year} {p.citations ? `· ${p.citations} citations` : ""}
                       </div>
                     </div>
                     <button
-                      onClick={() => addPapers(ws.id, [p.id])}
-                      className="btn-pop rounded-md border border-border bg-background px-2 py-1 text-xs hover:border-accent hover:text-accent"
+                      onClick={() => addPapers(ws.id, [p.id], [p])}
+                      className="btn-pop shrink-0 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium hover:border-accent hover:text-accent"
                     >
-                      Add
+                      + Add
                     </button>
                   </li>
                 ))}
                 {candidates.length === 0 && (
-                  <li className="py-6 text-center text-xs text-muted-foreground">No matches.</li>
+                  <li className="py-6 text-center text-xs text-muted-foreground">
+                    {searchingLive ? "Searching global academic papers…" : "No matches found."}
+                  </li>
                 )}
               </ul>
             </div>

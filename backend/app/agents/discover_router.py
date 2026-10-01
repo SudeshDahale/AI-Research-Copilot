@@ -26,7 +26,7 @@ def detect_discover_intent(message: str) -> tuple[str, dict]:
         logger.info(f"detect_discover_intent: rule-based match 'add_to_workspace' for message={message!r}")
         return "add_to_workspace", {}
 
-    if any(w in text for w in _SEARCH_WORDS):
+    if any(w in text for w in _SEARCH_WORDS) or text.startswith("search ") or text.startswith("find "):
         logger.info(f"detect_discover_intent: rule-based match 'search' for message={message!r}")
         return "search", {}
 

@@ -4,35 +4,35 @@ export type Session = { mode: "user" | "guest"; name: string; email?: string };
 
 type UserOut = { id: string; email: string; name: string; created_at: string };
 
-// Guest is a local-only concept (no account, nothing on the server) — it
-// still needs *some* persistence so a refresh doesn't kick a guest back to
-// the landing page, so it keeps using storage, just sessionStorage (cleared
-// when the tab closes) instead of localStorage.
 const GUEST_KEY = "arc.guest";
 
 /**
- * Resolves the current session by asking the server who the httpOnly cookie
- * belongs to — the JWT itself is never touched or stored on the client.
- * Falls back to a locally-flagged guest session if there's no real account.
+ * Resolves the current session.
+ * 1. Checks if the user is authenticated on the server (/auth/me). Real accounts take precedence.
+ * 2. If no authenticated user, checks if a guest session exists in storage.
+ * 3. Returns null if neither.
  */
 export async function getSession(): Promise<Session | null> {
   if (typeof window === "undefined") return null;
 
-  const guestRaw =
-    window.localStorage.getItem(GUEST_KEY) || window.sessionStorage.getItem(GUEST_KEY);
-  if (guestRaw) {
-    try {
-      return JSON.parse(guestRaw) as Session;
-    } catch {
-      window.localStorage.removeItem(GUEST_KEY);
-      window.sessionStorage.removeItem(GUEST_KEY);
-    }
-  }
-
   try {
     const user = await apiFetch<UserOut>("/auth/me");
+    // Clear any leftover guest flag since we are logged in as a real user
+    window.localStorage.removeItem(GUEST_KEY);
+    window.sessionStorage.removeItem(GUEST_KEY);
     return { mode: "user", name: user.name, email: user.email };
   } catch {
+    // Not logged in on server — check for guest flag
+    const guestRaw =
+      window.localStorage.getItem(GUEST_KEY) || window.sessionStorage.getItem(GUEST_KEY);
+    if (guestRaw) {
+      try {
+        return JSON.parse(guestRaw) as Session;
+      } catch {
+        window.localStorage.removeItem(GUEST_KEY);
+        window.sessionStorage.removeItem(GUEST_KEY);
+      }
+    }
     return null;
   }
 }
@@ -45,31 +45,19 @@ export function enterAsGuest(): Session {
 }
 
 /**
- * Tries to log in; if there's no account with that email yet, registers one.
- * Matches the old landing page's single "Get started" action while using
- * real auth underneath.
+ * Logs in with email and password via /auth/login.
+ * Clears guest markers on success.
  */
-export async function loginOrRegister(
-  email: string,
-  password: string,
-  name: string,
-): Promise<Session> {
-  try {
-    const user = await apiFetch<UserOut>("/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ email, password }),
-    });
-    return { mode: "user", name: user.name, email: user.email };
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 401) {
-      const user = await apiFetch<UserOut>("/auth/register", {
-        method: "POST",
-        body: JSON.stringify({ email, password, name }),
-      });
-      return { mode: "user", name: user.name, email: user.email };
-    }
-    throw err;
+export async function login(email: string, password: string): Promise<Session> {
+  const user = await apiFetch<UserOut>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), password }),
+  });
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(GUEST_KEY);
+    window.sessionStorage.removeItem(GUEST_KEY);
   }
+  return { mode: "user", name: user.name, email: user.email };
 }
 
 export async function clearSession(): Promise<void> {

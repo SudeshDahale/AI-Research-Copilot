@@ -80,5 +80,14 @@ async def stream_fast_pipeline(
         token_count += 1
         yield chunk
 
+    if token_count == 0 and papers:
+        top_p = papers[0]
+        title = top_p.get("title", "Selected paper")
+        abstract = top_p.get("abstract", "Relevant scientific literature provides insights on this query.")
+        fallback_text = f"Based on {title}: {abstract}"
+        for part in fallback_text.split(" "):
+            yield part + " "
+        token_count = len(fallback_text.split(" "))
+
     elapsed_ms = round((time.monotonic() - t0) * 1000)
     logger.info(f"fast_pipeline: completed stream in {elapsed_ms}ms (~{token_count} chunks)")

@@ -215,15 +215,15 @@ def similarity(query: str, paper: dict, query_embedding: list[float] | None = No
             if weight > 1.5:
                 matched_high_value_term = True
 
-    if has_high_value_term and not matched_high_value_term and any_weighted_matches == 0:
+    if has_high_value_term and not matched_high_value_term:
         if semantic > 0:
             return min(0.99, round(semantic * 0.60 + recency * 0.20 + impact * 0.20, 4))
-        return min(0.99, round(0.25 + recency * 0.20 + impact * 0.20, 4))
+        return 0.0
 
     if any_weighted_matches == 0:
         if semantic > 0:
             return min(0.99, round(semantic * 0.60 + recency * 0.20 + impact * 0.20, 4))
-        return min(0.99, round(0.25 + recency * 0.20 + impact * 0.20, 4))
+        return 0.0
 
     title_cov = title_weighted_matches / total_weighted_query
     abstract_cov = abstract_weighted_matches / total_weighted_query

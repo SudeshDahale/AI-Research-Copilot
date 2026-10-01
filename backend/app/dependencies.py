@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from fastapi import Cookie, Header, HTTPException, status
+import inspect
+from fastapi import Cookie, Header, HTTPException, Request, status
 from fastapi.params import Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -57,11 +58,19 @@ async def get_current_user(
 
 
 async def get_current_user_optional(
+    request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
     access_token: Annotated[str | None, Cookie(alias=COOKIE_NAME)] = None,
     authorization: Annotated[str | None, Header()] = None,
 ) -> User | None:
     """FastAPI dependency: resolves the caller's User if token is present, else returns None."""
+    if hasattr(request, "app") and get_current_user in request.app.dependency_overrides:
+        override = request.app.dependency_overrides[get_current_user]
+        res = override() if callable(override) else override
+        if inspect.isawaitable(res):
+            res = await res
+        return res
+
     token = _extract_token(access_token, authorization)
     if token is None:
         return None

@@ -1,73 +1,59 @@
-"""Context Distillation Layer — Chat Optimization.
+"""Context Distillation Layer — Full Academic Fidelity.
 
-Compresses paper abstracts into concise 1-2 line structured insights (Objective, Method, Key Finding)
-to prevent wasting LLM tokens on raw, verbose text while preserving high semantic density.
-Uses an in-memory LRU cache to ensure zero latency on repeated queries.
+Formats paper abstracts and metadata (Title, Authors, Year, Venue, Citations, Abstract)
+to provide high-fidelity context for LLM generation while staying within token budgets.
 """
 from __future__ import annotations
 
-import re
 from functools import lru_cache
 from typing import Any
 
 
-def _extract_sentences(text: str) -> list[str]:
-    """Split text into clean sentences."""
-    if not text:
-        return []
-    # Split on sentence boundaries
-    raw_sentences = re.split(r"(?<=[.!?])\s+", text.strip())
-    return [s.strip() for s in raw_sentences if s.strip()]
+def format_paper_context(paper: dict[str, Any], max_abstract_len: int = 1200) -> str:
+    """Produce a high-density, full-context representation of a research paper."""
+    title = paper.get("title") or "Untitled"
+    year = paper.get("year") or "n.d."
+    journal = paper.get("journal") or "Academic Publication"
+    citations = paper.get("citations", 0)
+    
+    authors = paper.get("authors") or []
+    if isinstance(authors, list) and authors:
+        author_str = ", ".join(str(a) for a in authors[:3]) + (" et al." if len(authors) > 3 else "")
+    else:
+        author_str = "Unknown"
+
+    abstract = (paper.get("abstract") or "").strip()
+    if len(abstract) > max_abstract_len:
+        abstract = abstract[:max_abstract_len - 3] + "..."
+    if not abstract:
+        abstract = "No abstract available."
+
+    tags = paper.get("tags") or []
+    tag_str = f" | **Keywords**: {', '.join(str(t) for t in tags[:4])}" if tags else ""
+
+    return (
+        f"### Paper: {title} ({year})\n"
+        f"- **Authors**: {author_str}\n"
+        f"- **Venue**: {journal} | **Citations**: {citations}{tag_str}\n"
+        f"- **Abstract**: {abstract}"
+    )
 
 
 @lru_cache(maxsize=1024)
 def distill_paper(paper_id: str, title: str, abstract: str, year: int | None = None) -> str:
-    """Produce a high-density, 1-2 sentence distilled summary of a paper.
-
-    Format:
-    [Title (Year)]: <Objective / Core Method> -> <Key Result / Impact>
-
-    Cache note: The cache key includes (paper_id, title, abstract, year), so a
-    paper whose abstract changes in the DB (via upsert) will correctly produce
-    a cache MISS for the new abstract — but the old entry for the previous
-    abstract content remains resident until evicted by LRU (maxsize=1024).
-    This is acceptable for a within-process read-through cache. On deployment
-    restarts the cache is always cold.
-    """
-    sentences = _extract_sentences(abstract)
-    if not sentences:
-        return f"- **{title}** ({year or 'n.d.'}): {title}"
-
-    # First sentence is usually the objective/background
-    objective = sentences[0]
-
-    # Last sentence is usually the main finding/conclusion
-    conclusion = sentences[-1] if len(sentences) > 1 else ""
-
-    # Truncate overly long sentences to keep token footprint strictly under control
-    if len(objective) > 180:
-        objective = objective[:177] + "..."
-    if conclusion and len(conclusion) > 180:
-        conclusion = conclusion[:177] + "..."
-
-    year_str = f" ({year})" if year else ""
-    if conclusion and conclusion != objective:
-        return f"- **{title}**{year_str}: {objective} → Key finding: {conclusion}"
-    return f"- **{title}**{year_str}: {objective}"
+    """Backwards-compatible single-paper distillation with full abstract context."""
+    return format_paper_context({
+        "id": paper_id,
+        "title": title,
+        "abstract": abstract,
+        "year": year,
+    })
 
 
-def distill_papers_context(papers: list[dict[str, Any]], max_papers: int = 5) -> str:
-    """Convert a list of papers into a compact distilled context block for LLM prompts."""
+def distill_papers_context(papers: list[dict[str, Any]], max_papers: int = 8) -> str:
+    """Convert top candidate papers into a rich context block for LLM synthesis."""
     if not papers:
-        return "No relevant papers available."
+        return "No relevant papers available in context."
     
     selected = papers[:max_papers]
-    distilled_lines = []
-    for p in selected:
-        p_id = str(p.get("id", ""))
-        title = p.get("title") or "Untitled"
-        abstract = p.get("abstract") or ""
-        year = p.get("year")
-        distilled_lines.append(distill_paper(p_id, title, abstract, year))
-
-    return "\n".join(distilled_lines)
+    return "\n\n".join(format_paper_context(p) for p in selected)

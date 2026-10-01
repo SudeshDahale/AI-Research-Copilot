@@ -83,7 +83,7 @@ async def detect_intent(query: str) -> str:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query}
             ],
-            model="qwen/qwen3.6-27b",
+            model="qwen/qwen3.8-27b",
             max_tokens=10,
             temperature=0.0
         )

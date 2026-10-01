@@ -5,9 +5,12 @@ from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from datetime import datetime
 from app.models.workspace import Workspace, WorkspacePaper
 from app.schemas.workspace import WorkspaceCreate
-from app.services.paper_db_service import upsert_paper
+from app.services.paper_db_service import upsert_paper, get_paper
+
+_CURRENT_YEAR = datetime.now().year
 
 
 async def get_workspace(
@@ -58,7 +61,25 @@ async def create_workspace(
         # Add initial papers and upsert metadata
         for paper_id in set(obj_in.paper_ids):
             if paper_id in data_by_id:
-                await upsert_paper(db, data_by_id[paper_id])
+                pd = data_by_id[paper_id]
+                if not pd.get("pdf_url") and pd.get("pdfUrl"):
+                    pd["pdf_url"] = pd["pdfUrl"]
+                await upsert_paper(db, pd)
+            else:
+                existing = await get_paper(db, paper_id)
+                if not existing:
+                    await upsert_paper(db, {
+                        "id": paper_id,
+                        "title": f"Paper {paper_id}",
+                        "abstract": "",
+                        "authors": [],
+                        "year": _CURRENT_YEAR,
+                        "journal": "Academic Publication",
+                        "citations": 0,
+                        "doi": "",
+                        "pdf_url": "",
+                        "tags": []
+                    })
             db.add(WorkspacePaper(workspace_id=db_obj.id, paper_id=paper_id))
 
     await db.commit()
@@ -126,7 +147,25 @@ async def add_papers_to_workspace(
     for paper_id in new_papers:
         # Persist paper metadata if provided
         if paper_id in data_by_id:
-            await upsert_paper(db, data_by_id[paper_id])
+            pd = data_by_id[paper_id]
+            if not pd.get("pdf_url") and pd.get("pdfUrl"):
+                pd["pdf_url"] = pd["pdfUrl"]
+            await upsert_paper(db, pd)
+        else:
+            existing = await get_paper(db, paper_id)
+            if not existing:
+                await upsert_paper(db, {
+                    "id": paper_id,
+                    "title": f"Paper {paper_id}",
+                    "abstract": "",
+                    "authors": [],
+                    "year": _CURRENT_YEAR,
+                    "journal": "Academic Publication",
+                    "citations": 0,
+                    "doi": "",
+                    "pdf_url": "",
+                    "tags": []
+                })
         db.add(WorkspacePaper(workspace_id=workspace_id, paper_id=paper_id))
 
     await db.commit()

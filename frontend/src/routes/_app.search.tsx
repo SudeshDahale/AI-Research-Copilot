@@ -28,6 +28,7 @@ import { AgentSteps } from "@/components/agent/AgentSteps";
 import { searchSteps, workspaceSteps, answerSteps, type Artifact } from "@/lib/agent-plan";
 import { useWorkspaces, type Workspace } from "@/lib/workspaces";
 import { cachePapers } from "@/lib/paper-cache";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/_app/search")({
   head: () => ({
@@ -128,6 +129,7 @@ function SearchPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const { workspaces, create, addPapers } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
   const [wsPickerOpen, setWsPickerOpen] = useState(false);
 
   // Dynamically extract real publication venues from retrieved results
@@ -232,8 +234,7 @@ function SearchPage() {
       return true;
     });
 
-    const minScore = papers.length > 0 && papers[0].score < 0.25 ? 0.04 : 0.14;
-    const ranked = filtered.filter((p) => p.score > minScore);
+    const ranked = [...filtered];
     if (sort === "relevance") ranked.sort((a, b) => b.score - a.score);
     if (sort === "recent") ranked.sort((a, b) => b.year - a.year);
     if (sort === "cited") ranked.sort((a, b) => b.citations - a.citations);
@@ -333,11 +334,11 @@ function SearchPage() {
   ) => {
     const q = text.toLowerCase().trim();
     const wantsWorkspace =
-      q.includes("workspace") ||
-      q.includes("collection") ||
-      q.includes("save these") ||
-      q.includes("create") ||
-      q.includes("add to workspace");
+      /\b(create|save|add|make|export|build)\b.*\b(work\s*space|workpasce|wrkspace|workspace|collection|folder)\b/i.test(q) ||
+      /\b(save|add)\s+(these|all|selected|the\s+top\s*\d*)\s+papers?\s+(to|into|as)\b/i.test(q) ||
+      q.includes("add to workspace") ||
+      q.includes("save to workspace") ||
+      q.includes("create workspace");
 
     const numWords: Record<string, number> = {
       one: 1,
@@ -360,40 +361,144 @@ function SearchPage() {
     if (countDigitMatch) requestedCount = parseInt(countDigitMatch[1], 10);
     else if (countWordMatch) requestedCount = numWords[countWordMatch[1].toLowerCase()];
 
+    if (isGuest) {
+      if (wantsWorkspace) {
+        openLoginModal({
+          title: "Log in to create a workspace",
+          message:
+            "Guest mode allows paper searching. Sign in with shlok@mail.com to create workspaces and save collections.",
+        });
+        return {
+          steps: [{ label: "Authentication required", detail: "Sign in required", ms: 0 }],
+          finish: async () => ({
+            text: "Creating workspaces requires a member login. Please sign in with **shlok@mail.com** (password: **test@123**) to save this workspace.",
+          }),
+          live: false,
+        };
+      }
+      openLoginModal({
+        title: "Log in to use AI Research Copilot",
+        message:
+          "Guest mode is restricted to paper searching to prevent extra token usage. Log in to chat with papers, perform deep reasoning, and generate synthesis.",
+      });
+      return {
+        steps: [
+          { label: "AI Copilot requires login", detail: "Token usage restricted to members", ms: 0 },
+        ],
+        finish: async () => ({
+          text: "Guest mode allows paper searching and discovery. To prevent extra token usage, the AI Research Copilot and deep synthesis require logging in with a registered account (**shlok@mail.com**).",
+        }),
+        live: false,
+      };
+    }
+
     if (wantsWorkspace) {
+      // 1. Check for explicit year constraints in the user's workspace prompt
+      const yearMatch = q.match(/\b(201\d|202\d)\b/);
+      const targetYear = yearMatch ? parseInt(yearMatch[1], 10) : null;
+      const isYearSpecific =
+        targetYear &&
+        (q.includes("year") ||
+          q.includes("only") ||
+          q.includes("from") ||
+          q.includes("in") ||
+          q.includes("of"));
+
+      const sourceList = results.length > 0 ? results : papers;
+      let eligible = sourceList;
+
+      if (isYearSpecific && targetYear) {
+        const matchingResults = sourceList.filter((p) => p.year === targetYear);
+        if (matchingResults.length > 0) {
+          eligible = matchingResults;
+        } else {
+          const matchingRaw = papers.filter((p) => p.year === targetYear);
+          if (matchingRaw.length > 0) {
+            eligible = matchingRaw;
+          } else {
+            eligible = [];
+          }
+        }
+      }
+
+      if (isYearSpecific && targetYear && eligible.length === 0) {
+        const availableYears = Array.from(new Set(papers.map((p) => p.year))).sort((a, b) => b - a);
+        const yearSpan =
+          availableYears.length > 0
+            ? `${availableYears[availableYears.length - 1]}–${availableYears[0]}`
+            : "previous years";
+        return {
+          steps: [{ label: "Checking publication years", detail: `Year ${targetYear}`, ms: 0 }],
+          finish: async () => {
+            return {
+              text: `None of the papers in the current search results for "${active || "your search"}" were published in **${targetYear}** (results span ${yearSpan}).\n\nWould you like me to:\n1. Create a workspace with the most recent papers (${availableYears[0] || "latest"}) instead?\n2. Run a new search specifically targeting "${active || "topic"} ${targetYear}"?`,
+            };
+          },
+          live: true,
+        };
+      }
+
       const targetCount =
         requestedCount && requestedCount > 0
           ? requestedCount
           : selected.size > 0
             ? selected.size
-            : 5;
-      let picks = results.slice(0, targetCount);
-      if (selected.size > 0) {
-        const selectedList = results.filter((p) => selected.has(p.id));
+            : eligible.length > 0
+              ? Math.min(eligible.length, 5)
+              : 5;
+
+      let picks = eligible.slice(0, targetCount);
+      if (selected.size > 0 && !isYearSpecific) {
+        const selectedList = eligible.filter((p) => selected.has(p.id));
         if (selectedList.length > 0) {
           picks = selectedList.slice(0, targetCount);
         }
       }
+
       const steps = workspaceSteps(active || "Search", picks.length);
       return {
         steps,
         finish: async () => {
           onProgress(1);
-          let wsName = active || "Curated Workspace";
+          let wsName = active
+            ? isYearSpecific && targetYear
+              ? `${active} (${targetYear})`
+              : `${active} Workspace`
+            : "Curated Workspace";
           const nameMatch = text.match(/(?:named|called|for|on)\s+["']?([^"'\n,]+)["']?/i);
           if (
             nameMatch &&
             nameMatch[1].trim().length > 2 &&
-            !nameMatch[1].toLowerCase().includes("paper")
+            !nameMatch[1].toLowerCase().includes("paper") &&
+            !nameMatch[1].toLowerCase().includes("workspace")
           ) {
             wsName = nameMatch[1].trim();
           }
           if (wsName.length > 42) wsName = `${wsName.slice(0, 42)}…`;
 
+          const picksData = picks.map((p) => ({
+            id: p.id,
+            title: p.title,
+            authors: p.authors || [],
+            year: p.year || 0,
+            journal: p.journal || "",
+            citations: p.citations || 0,
+            relevance: p.score || 0,
+            abstract: p.abstract || "",
+            tags: p.tags || [],
+            doi: p.doi || "",
+            addedAt: p.addedAt || "Just now",
+            status: p.status || "unread",
+            summary: p.summary || {},
+            gaps: p.gaps || [],
+            future: p.future || [],
+            pdf_url: p.pdfUrl || null,
+          }));
+
           const ws = await create(
             wsName,
             picks.map((p) => p.id),
-            picks,
+            picksData,
           );
           onProgress(steps.length);
           const artifact: Artifact = {
@@ -403,7 +508,7 @@ function SearchPage() {
             count: ws.paperIds.length,
           };
           return {
-            text: `Done — I created the workspace **${ws.name}** with the top ${picks.length} most relevant papers for "${active || wsName}":\n\n${picks
+            text: `Done — I created the workspace **${ws.name}** with ${picks.length} papers${isYearSpecific && targetYear ? ` published in **${targetYear}**` : ""} for "${active || wsName}":\n\n${picks
               .map(
                 (p, i) =>
                   `${i + 1}. **${p.title}** — ${p.journal || "ArXiv"} ${p.year} (${Math.round((p.score || 0) * 100)}% match)`,
@@ -419,7 +524,8 @@ function SearchPage() {
     }
 
     const isFilterOrTopN =
-      /^(top\s*\d+|\d+\s+(best|most\s+relevant)|filter|only\s+20\d\d|show\s+top)/i.test(q);
+      /^(top\s*\d+|\d+\s+(best|most\s+relevant)|filter|only\s+20\d\d|show\s+top|show\s+20\d\d|papers\s+in\s+20\d\d|papers\s+from\s+20\d\d)/i.test(q) ||
+      (/\b(filter|only|show)\b.*\b(201\d|202\d)\b/i.test(q) && !wantsWorkspace);
 
     if (isFilterOrTopN) {
       const steps = [
@@ -489,11 +595,12 @@ function SearchPage() {
       };
     }
 
-    // Real live LangGraph dual-pipeline streaming agent
+    // Real live LangGraph dual-pipeline streaming agent for summary, gaps, compare, review, and generic research queries
+    const activePapersList = results.length > 0 ? results : papers;
     const steps = [
       {
-        label: "Retrieving literature",
-        detail: active ? `Topic: ${active}` : "Searching papers",
+        label: "Analyzing in-scope papers",
+        detail: active ? `Topic: ${active} (${activePapersList.length} papers)` : "Research agent synthesis",
         ms: 0,
       },
       { label: "Fast synthesis", detail: "Streaming live tokens", ms: 0 },
@@ -504,9 +611,33 @@ function SearchPage() {
       new Promise((resolve, reject) => {
         let finalText = "";
         const queryWithContext = active ? `${text} (Topic: ${active})` : text;
+        const candidatePayload = activePapersList.slice(0, 20).map((p) => ({
+          id: p.id,
+          title: p.title,
+          authors: p.authors || [],
+          year: p.year || 0,
+          journal: p.journal || "",
+          citations: p.citations || 0,
+          relevance: p.score || 0,
+          abstract: p.abstract || "",
+          tags: p.tags || [],
+          doi: p.doi || "",
+          addedAt: p.addedAt || "Just now",
+          status: p.status || "unread",
+          summary: p.summary || {},
+          gaps: p.gaps || [],
+          future: p.future || [],
+          pdf_url: p.pdfUrl || null,
+        }));
+
         apiStream(
           "/agent/run",
-          { query: queryWithContext, workspace_id: null, history: history || [] },
+          {
+            query: queryWithContext,
+            workspace_id: null,
+            history: history || [],
+            papers: candidatePayload,
+          },
           (event, data) => {
             if (event === "thinking" || event === "retrieving") {
               onProgress(1);
@@ -551,6 +682,13 @@ function SearchPage() {
   };
 
   const addSelectedTo = (ws: Workspace) => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to save papers",
+        message: "Workspaces require an account to save curated papers. Log in to continue.",
+      });
+      return;
+    }
     const selectedPapers = results.filter((p) => selected.has(p.id));
     addPapers(ws.id, [...selected], selectedPapers);
     setSelected(new Set());
@@ -558,6 +696,14 @@ function SearchPage() {
   };
 
   const createWorkspaceFromSelection = async () => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to create a workspace",
+        message:
+          "You have selected papers in Discover. Log in to save them into a permanent research workspace.",
+      });
+      return;
+    }
     const name = prompt("Name this workspace:", active);
     if (!name) return;
     try {
@@ -1056,7 +1202,31 @@ function SearchPage() {
           </section>
 
           {/* Chatbot */}
-          <aside className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)]">
+          <aside className="lg:sticky lg:top-4 lg:h-[calc(100vh-2rem)] flex flex-col gap-2">
+            {isGuest && (
+              <div className="card-3d rounded-xl border border-primary/25 bg-primary/5 p-3 text-xs flex items-center justify-between gap-2 shadow-sm animate-in fade-in">
+                <div className="flex items-center gap-2 text-foreground/85">
+                  <span className="live-dot" />
+                  <span>
+                    <strong>Guest Mode</strong>: Paper search only. Sign in to chat & save tokens.
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    openLoginModal({
+                      title: "Log in to use AI Copilot",
+                      message:
+                        "Sign in with shlok@mail.com to chat with papers, perform deep reasoning, and generate synthesis without token limits.",
+                    })
+                  }
+                  className="h-7 text-xs px-2.5 font-medium border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                >
+                  Sign in
+                </Button>
+              </div>
+            )}
             <AgentChat
               key={active}
               papers={results.slice(0, 40)}
@@ -1156,7 +1326,7 @@ function ResultRow({
         <div className="pt-0.5 text-right font-mono text-[11px] text-muted-foreground">
           {String(rank).padStart(2, "0")}
         </div>
-        <Link to="/papers/$id" params={{ id: paper.id }} className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="mb-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <span className="text-foreground/70 font-medium">{paper.journal}</span>
             <span>·</span>
@@ -1172,12 +1342,14 @@ function ResultRow({
               </span>
             ))}
           </div>
-          <h3 className="text-[15px] font-medium leading-snug text-foreground group-hover:text-accent">
-            {paper.title}
-          </h3>
+          <Link to="/papers/$id" params={{ id: paper.id }} className="block">
+            <h3 className="text-[15px] font-medium leading-snug text-foreground hover:text-accent transition-colors">
+              {paper.title}
+            </h3>
+          </Link>
           <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
             <span className="truncate max-w-lg">{paper.authors.join(", ")}</span>
-            <div className="flex items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5 pt-0.5">
               <button
                 onClick={handleCopyBib}
                 className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
@@ -1201,7 +1373,6 @@ function ResultRow({
                   href={paper.pdfUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={(e) => e.stopPropagation()}
                   className="btn-pop inline-flex items-center gap-1 rounded border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:border-accent hover:text-accent transition-colors shadow-sm"
                   title="Open Open-Access PDF"
                 >
@@ -1213,7 +1384,7 @@ function ResultRow({
             </div>
           </div>
           <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">{paper.abstract}</p>
-        </Link>
+        </div>
         <div className="shrink-0 text-right">
           <div className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-medium tabular-nums text-accent">
             {pct}%

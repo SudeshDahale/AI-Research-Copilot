@@ -53,7 +53,7 @@ def distill_paper(paper_id: str, title: str, abstract: str, year: int | None = N
 def distill_papers_context(papers: list[dict[str, Any]], max_papers: int = 8) -> str:
     """Convert top candidate papers into a rich context block for LLM synthesis."""
     if not papers:
-        return "No relevant papers available in context."
+        return "No relevant papers available."
     
     selected = papers[:max_papers]
     return "\n\n".join(format_paper_context(p) for p in selected)

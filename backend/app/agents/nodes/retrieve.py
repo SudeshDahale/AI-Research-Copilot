@@ -87,7 +87,14 @@ async def retrieve_node(state: AgentState) -> dict:
         elapsed = round((time.monotonic() - t0) * 1000)
         return {"papers": papers, "metrics": {"db_ms": elapsed}}
 
-    # ── Global request — external search allowed ─────────────────────────────
+    # ── Global request — check in-memory candidate papers or external search ───
+    context_papers = state.get("papers")
+    if context_papers and isinstance(context_papers, list) and len(context_papers) > 0:
+        papers = _strip_embeddings(context_papers)
+        logger.info(f"retrieve_node: using {len(papers)} candidate papers from client context")
+        elapsed = round((time.monotonic() - t0) * 1000)
+        return {"papers": papers, "metrics": {"context_ms": elapsed}}
+
     query = state.get("query", "")
     try:
         raw = await paper_service.search_papers(query, limit=15)

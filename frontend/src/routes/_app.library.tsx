@@ -30,6 +30,7 @@ import { downloadText, toBibTeX, stamp } from "@/lib/download";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useWorkspaces } from "@/lib/workspaces";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/_app/library")({
   head: () => ({
@@ -85,6 +86,7 @@ function LibraryPage() {
   const [notification, setNotification] = useState<string | null>(null);
 
   const { workspaces, create, addPapers } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
 
   // Load initial starred papers from localStorage
   useEffect(() => {
@@ -285,6 +287,13 @@ function LibraryPage() {
 
   // Bulk actions
   const createWorkspaceFromSelection = () => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to create a workspace",
+        message: "Sign in with shlok@mail.com to save papers into a curated workspace.",
+      });
+      return;
+    }
     if (selected.size === 0) return;
     const name = prompt(
       "Name this workspace:",
@@ -298,6 +307,13 @@ function LibraryPage() {
   };
 
   const addSelectedToExistingWorkspace = (wsId: string) => {
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to add papers",
+        message: "Workspaces require an account. Please sign in with shlok@mail.com.",
+      });
+      return;
+    }
     addPapers(wsId, Array.from(selected));
     setWsDropdownOpen(false);
     setSelected(new Set());
@@ -330,6 +346,34 @@ function LibraryPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      {/* Guest Lock Banner */}
+      {isGuest && (
+        <div className="card-3d mb-8 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-card to-accent/10 p-6 sm:p-8 shadow-xl animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+                Library sync & workspace collections
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Guest mode is limited to paper searching. Sign in with <strong>shlok@mail.com</strong> to sync saved papers across workspaces, manage collections, and run AI research synthesis.
+              </p>
+            </div>
+            <Button
+              onClick={() =>
+                openLoginModal({
+                  title: "Log in to access Library",
+                  message: "Sign in with shlok@mail.com to manage and sync your research library.",
+                })
+              }
+              size="default"
+              className="font-medium shadow-md shrink-0"
+            >
+              Sign in as Shlok
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Toast Notification */}
       {notification && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg border border-primary/20 bg-background/95 px-4 py-2.5 text-xs font-medium text-foreground shadow-xl backdrop-blur animate-in fade-in slide-in-from-bottom-2">

@@ -20,6 +20,7 @@ import remarkGfm from "remark-gfm";
 import { Button } from "@/components/ui/button";
 import { useDocuments, type Doc } from "@/lib/documents";
 import { useWorkspaces, type Workspace } from "@/lib/workspaces";
+import { useAuth } from "@/lib/auth-context";
 import { getCachedPapers } from "@/lib/paper-cache";
 import { downloadText, slugify, toLaTeX, toBibTeX, toPrintableHTML } from "@/lib/download";
 import {
@@ -51,6 +52,7 @@ export const Route = createFileRoute("/_app/review")({
 
 function ReviewPage() {
   const { workspaces } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | undefined>(workspaces[0]?.id);
 
   // Automatically select the first available workspace once workspaces finish loading
@@ -75,7 +77,35 @@ function ReviewPage() {
   const activeWs = workspaces.find((w) => w.id === activeWorkspaceId);
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-8 px-6 py-8 lg:grid-cols-[240px_1fr]">
+    <div className="mx-auto w-full max-w-6xl px-6 py-8">
+      {isGuest && (
+        <div className="card-3d mb-8 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-card to-accent/10 p-6 sm:p-8 shadow-xl animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+                Literature Reviews require a member account
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Guest mode allows paper search and discovery. Sign in with <strong>shlok@mail.com</strong> to view and export AI-synthesized literature reviews and workspace reports.
+              </p>
+            </div>
+            <Button
+              onClick={() =>
+                openLoginModal({
+                  title: "Log in to access Reviews",
+                  message: "Sign in with shlok@mail.com to access AI-generated literature reviews.",
+                })
+              }
+              size="default"
+              className="font-medium shadow-md shrink-0"
+            >
+              Sign in as Shlok
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_1fr]">
       {/* Sidebar */}
       <aside className="lg:sticky lg:top-8 lg:self-start space-y-4">
         {/* Workspace selector */}
@@ -164,6 +194,7 @@ function ReviewPage() {
           <DocView doc={activeDoc} activeWs={activeWs} />
         )}
       </article>
+      </div>
     </div>
   );
 }

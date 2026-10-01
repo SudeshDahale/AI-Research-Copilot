@@ -1,7 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { FolderKanban, Plus, Trash2, ArrowRight, Sparkles } from "lucide-react";
+import { FolderKanban, Plus, Trash2, ArrowRight, Sparkles, Lock, ShieldCheck } from "lucide-react";
 import { useWorkspaces } from "@/lib/workspaces";
+import { useAuth } from "@/lib/auth-context";
 import { getCachedPapers } from "@/lib/paper-cache";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,11 +24,20 @@ export const Route = createFileRoute("/_app/workflow/")({
 
 function WorkflowPage() {
   const { workspaces, create, remove } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
   const [name, setName] = useState("");
   const navigate = useNavigate();
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isGuest) {
+      openLoginModal({
+        title: "Log in to create a workspace",
+        message:
+          "Guests can discover papers freely. Log in to create curated workspaces, save collections, and use the AI Research Copilot.",
+      });
+      return;
+    }
     if (!name.trim()) return;
     try {
       const ws = await create(name);
@@ -40,6 +50,44 @@ function WorkflowPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
+      {/* Guest Lock Banner if in guest mode */}
+      {isGuest && (
+        <div className="card-3d mb-8 overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-card to-accent/10 p-6 sm:p-8 shadow-xl animate-in fade-in">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-xl">
+              <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                <Lock className="h-3.5 w-3.5" /> Member Exclusive Feature
+              </div>
+              <h2 className="font-display text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+                Workspaces require member login
+              </h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Guest mode allows you to search and read papers. Sign in with <strong>shlok@mail.com</strong> to build isolated workspaces, run scoped LangGraph research reasoning, and synthesize reviews.
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+              <Button
+                onClick={() =>
+                  openLoginModal({
+                    title: "Log in to access Workspaces",
+                    message: "Sign in with shlok@mail.com to access and curate research workspaces.",
+                  })
+                }
+                size="default"
+                className="font-medium shadow-md gap-1.5"
+              >
+                Sign in as Shlok <ArrowRight className="h-4 w-4" />
+              </Button>
+              <Link to="/search">
+                <Button variant="outline" size="default" className="w-full sm:w-auto">
+                  Search Papers
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm">
@@ -98,17 +146,33 @@ function WorkflowPage() {
                   <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-primary to-accent text-primary-foreground shadow-md">
                     <FolderKanban className="h-4 w-4" />
                   </div>
-                  <button
-                    onClick={() => {
-                      if (confirm(`Delete workspace "${w.name}"?`)) remove(w.id);
-                    }}
-                    className="btn-pop rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
-                    aria-label="Delete"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {!isGuest && (
+                    <button
+                      onClick={() => {
+                        if (confirm(`Delete workspace "${w.name}"?`)) remove(w.id);
+                      }}
+                      className="btn-pop rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      aria-label="Delete"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
-                <Link to="/workflow/$id" params={{ id: w.id }} className="block">
+                <Link
+                  to="/workflow/$id"
+                  params={{ id: w.id }}
+                  onClick={(e) => {
+                    if (isGuest) {
+                      e.preventDefault();
+                      openLoginModal({
+                        title: "Log in to open workspace",
+                        message: "Sign in with shlok@mail.com to access workspaces and run the scoped reasoning agent.",
+                        onSuccess: () => navigate({ to: "/workflow/$id", params: { id: w.id } }),
+                      });
+                    }
+                  }}
+                  className="block"
+                >
                   <h3 className="truncate font-display text-xl leading-tight group-hover:text-accent">
                     {w.name}
                   </h3>

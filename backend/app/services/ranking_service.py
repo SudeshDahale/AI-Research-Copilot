@@ -7,7 +7,8 @@ STOP_WORDS = {
     "why", "when", "where", "who", "which", "is", "are", "be", "been", "being", "by", "at", "from", "about",
     "research", "paper", "papers", "study", "studies", "find", "finding", "show", "showing", "give", "me",
     "list", "get", "do", "does", "did", "can", "could", "will", "would", "shall", "should", "into", "than",
-    "that", "this", "these", "those", "their", "its", "has", "have", "had", "as", "such", "some", "any"
+    "that", "this", "these", "those", "their", "its", "has", "have", "had", "as", "such", "some", "any",
+    "reference", "references", "referrence", "referrences", "citation", "citations", "literature", "article", "articles", "please"
 }
 
 # Domain acronyms that must never be removed
@@ -157,9 +158,19 @@ def similarity(query: str, paper: dict, query_embedding: list[float] | None = No
     3. Phrase co-occurrence boost
     4. Honest, un-inflated scoring calibration
     """
+    current_year = datetime.now().year
+    year = paper.get("year", current_year)
+    recency = min(1.0, max(0.0, (year - 2018) / 8.0))
+    citations = paper.get("citations", 0)
+    impact = min(1.0, math.log10(citations + 1) / 3.5)
+    is_recent = (current_year - year) <= 1
+    semantic = semantic_similarity(query_embedding, paper.get("embedding"))
+
     q_tokens = tokenize(query)
     if not q_tokens:
-        return 0.0
+        if semantic > 0:
+            return min(0.99, round(semantic * 0.70 + recency * 0.15 + impact * 0.15, 4))
+        return min(0.99, round(0.40 + recency * 0.30 + impact * 0.30, 4))
 
     title_raw = paper.get("title", "") or ""
     abstract_raw = paper.get("abstract", "") or ""
@@ -204,13 +215,15 @@ def similarity(query: str, paper: dict, query_embedding: list[float] | None = No
             if weight > 1.5:
                 matched_high_value_term = True
 
-    # Strict academic filter: If the query had specific high-value terms (e.g. 'diagram'),
-    # but the paper did not match ANY high-value term, heavily penalize or zero out
-    if has_high_value_term and not matched_high_value_term:
-        return 0.0
+    if has_high_value_term and not matched_high_value_term and any_weighted_matches == 0:
+        if semantic > 0:
+            return min(0.99, round(semantic * 0.60 + recency * 0.20 + impact * 0.20, 4))
+        return min(0.99, round(0.25 + recency * 0.20 + impact * 0.20, 4))
 
     if any_weighted_matches == 0:
-        return 0.0
+        if semantic > 0:
+            return min(0.99, round(semantic * 0.60 + recency * 0.20 + impact * 0.20, 4))
+        return min(0.99, round(0.25 + recency * 0.20 + impact * 0.20, 4))
 
     title_cov = title_weighted_matches / total_weighted_query
     abstract_cov = abstract_weighted_matches / total_weighted_query
@@ -237,18 +250,6 @@ def similarity(query: str, paper: dict, query_embedding: list[float] | None = No
     # Honest linear lexical score (no artificial exponentiation like ** 0.65)
     lexical = min(1.0, base_lexical)
 
-    # Recency & Impact signals
-    current_year = datetime.now().year
-    year = paper.get("year", current_year)
-    recency = min(1.0, max(0.0, (year - 2018) / 8.0))
-
-    citations = paper.get("citations", 0)
-    impact = min(1.0, math.log10(citations + 1) / 3.5)
-
-    # Recent papers (< 18 months) aren't penalized for low citation count
-    is_recent = (current_year - year) <= 1
-
-    semantic = semantic_similarity(query_embedding, paper.get("embedding"))
     if semantic > 0:
         if is_recent:
             score = lexical * 0.65 + semantic * 0.25 + recency * 0.10

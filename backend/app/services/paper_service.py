@@ -7,11 +7,27 @@ import httpx
 from datetime import datetime
 from app.config import settings
 from app.core.logging import logger
+from app.agents.prompts.search_prompts import SEARCH_SYSTEM_PROMPT, build_query_reformulation_prompt
+from app.services import llm_service
 
 _CURRENT_YEAR = datetime.now().year
 
 HEADERS = {
     "User-Agent": "ArclightResearchCopilot/1.0 (https://arclight.edu; mailto:contact@arclight.edu)"
+}
+
+META_SEARCH_WORDS = {
+    "search", "searching", "paper", "papers", "study", "studies", "article", "articles",
+    "reference", "references", "referrence", "referrences", "citation", "citations",
+    "literature", "find", "finding", "show", "give", "list", "get", "recommend",
+    "recommendation", "recommendations", "what", "which", "where", "who", "when", "how",
+    "me", "please", "help", "related", "relevant"
+}
+
+SEARCH_STOP_WORDS = {
+    "the", "a", "an", "of", "in", "on", "for", "and", "or", "to", "with", "using", "via",
+    "is", "are", "be", "been", "being", "by", "at", "from", "about", "into", "than", "that",
+    "this", "these", "those", "their", "its", "has", "have", "had", "as", "such", "some", "any"
 }
 
 # Academic expansions that preserve core domain nouns
@@ -32,6 +48,70 @@ EXPANSION_RULES = [
 ]
 
 
+def sanitize_search_query(query: str) -> str:
+    """Strip conversational filler, meta search words, and stop words."""
+    if not query:
+        return "artificial intelligence machine learning"
+    
+    # Remove common conversational prefixes
+    cleaned = re.sub(
+        r"^(search|find|give me|show me|look for|list|get|recommend|suggest)?\s*(the\s+)?(best\s+|seminal\s+|latest\s+|recent\s+)?(papers?|articles?|studies|literature|references?|referrences?|citations?)\s*(for\s+reference|for\s+referrence|for|about|on|regarding|in)?\s*",
+        "",
+        query.strip(),
+        flags=re.IGNORECASE,
+    ).strip()
+
+    tokens = [
+        w for w in re.findall(r"[a-zA-Z0-9]+", cleaned.lower())
+        if w not in SEARCH_STOP_WORDS and w not in META_SEARCH_WORDS
+    ]
+
+    if not tokens:
+        # Check original query tokens in case regex was overly aggressive
+        orig_tokens = [
+            w for w in re.findall(r"[a-zA-Z0-9]+", query.lower())
+            if w not in SEARCH_STOP_WORDS and w not in META_SEARCH_WORDS
+        ]
+        if orig_tokens:
+            return " ".join(orig_tokens)
+        return "artificial intelligence machine learning"
+
+    return " ".join(tokens)
+
+
+async def reformulate_query_llm(user_query: str) -> str:
+    """Use fast LLM to parse research intent and extract academic terms with strict timeout."""
+    sanitized = sanitize_search_query(user_query)
+    
+    # If the query is already concise (1-3 words), use fast sanitized query directly
+    words = user_query.strip().split()
+    if len(words) <= 3 and not any(w.lower() in META_SEARCH_WORDS for w in words):
+        return sanitized
+
+    try:
+        prompt = build_query_reformulation_prompt(user_query)
+        schema_hint = '{"clean_query": "concise academic query", "keywords": ["term1", "term2"]}'
+        
+        coro = llm_service.generate_structured_json(
+            system=SEARCH_SYSTEM_PROMPT,
+            prompt=prompt,
+            schema_hint=schema_hint,
+            model="qwen/qwen3.8-27b",
+            max_tokens=256,
+        )
+        # 1.5s max budget for LLM query reformulation
+        res = await asyncio.wait_for(coro, timeout=1.5)
+        if res and isinstance(res, dict) and res.get("clean_query"):
+            cq = res["clean_query"].strip()
+            if len(cq) >= 3:
+                logger.info(f"reformulate_query_llm: transformed '{user_query}' -> '{cq}'")
+                return cq
+    except Exception as e:
+        logger.debug(f"LLM query reformulation fallback to sanitized: {e}")
+
+    return sanitized
+
+
 def expand_query(query: str) -> list[str]:
     """Generate academic and conceptual expansions for user queries."""
     if not query:
@@ -48,15 +128,13 @@ def expand_query(query: str) -> list[str]:
             modified = True
             
     if modified and expanded.strip() != lower_q.strip():
-        # Clean up duplicate words in expansion
         words = []
         for w in expanded.split():
             if w not in words:
                 words.append(w)
         variations.append(" ".join(words))
 
-    # Add a clean alphanumeric fallback
-    cleaned = re.sub(r"[^a-zA-Z0-9\s]", " ", query).strip()
+    cleaned = sanitize_search_query(query)
     if cleaned and cleaned.lower() not in [v.lower() for v in variations]:
         variations.append(cleaned)
         
@@ -86,17 +164,34 @@ def parse_arxiv_id(id_url: str) -> str:
     return f"arx-{formatted}"
 
 
+def reconstruct_openalex_abstract(inverted_index: dict | None) -> str:
+    """Reconstruct text from OpenAlex abstract_inverted_index."""
+    if not inverted_index or not isinstance(inverted_index, dict):
+        return ""
+    words: list[tuple[int, str]] = []
+    for word, positions in inverted_index.items():
+        for pos in positions:
+            words.append((pos, word))
+    words.sort(key=lambda x: x[0])
+    return clean_text(" ".join(w[1] for w in words))
+
+
 async def fetch_arxiv(query: str, limit: int = 30, offset: int = 0) -> list[dict]:
-    """Fetch papers from the arXiv API with title/abstract scoping and pagination."""
+    """Fetch papers from arXiv API with sanitized boolean query and fallback."""
     url = "https://export.arxiv.org/api/query"
-    clean_q = re.sub(r'["\'+]', " ", query).strip()
     
-    # arXiv search expression
-    words = [w for w in clean_q.split() if len(w) > 1]
-    if len(words) > 1:
+    clean_q = sanitize_search_query(query)
+    words = [w for w in clean_q.split() if len(w) > 1 and w not in SEARCH_STOP_WORDS and w not in META_SEARCH_WORDS]
+    
+    if len(words) > 3:
+        # Scope core 3 terms with AND to keep high precision without over-constraining
+        search_expr = " AND ".join(f"all:{w}" for w in words[:3])
+    elif len(words) > 1:
         search_expr = " AND ".join(f"all:{w}" for w in words)
+    elif len(words) == 1:
+        search_expr = f"all:{words[0]}"
     else:
-        search_expr = f"all:{clean_q}" if clean_q else "all:research"
+        search_expr = "all:machine AND all:learning"
 
     params = {
         "search_query": search_expr,
@@ -146,19 +241,15 @@ async def fetch_arxiv(query: str, limit: int = 30, offset: int = 0) -> list[dict
 
     papers = []
     for entry in root.findall("atom:entry", ns):
-        # 1. ID
         id_elem = entry.find("atom:id", ns)
         id_val = parse_arxiv_id(id_elem.text) if id_elem is not None and id_elem.text else f"arx-{uuid.uuid4().hex[:12]}"
 
-        # 2. Title
         title_elem = entry.find("atom:title", ns)
         title = clean_text(title_elem.text) if title_elem is not None and title_elem.text else ""
 
-        # 3. Abstract
         summary_elem = entry.find("atom:summary", ns)
         abstract = clean_text(summary_elem.text) if summary_elem is not None and summary_elem.text else ""
 
-        # 4. Year
         published_elem = entry.find("atom:published", ns)
         year = _CURRENT_YEAR
         if published_elem is not None and published_elem.text:
@@ -167,25 +258,21 @@ async def fetch_arxiv(query: str, limit: int = 30, offset: int = 0) -> list[dict
             except (ValueError, IndexError):
                 pass
 
-        # 5. Authors
         authors = []
         for author in entry.findall("atom:author", ns):
             name_elem = author.find("atom:name", ns)
             if name_elem is not None and name_elem.text:
                 authors.append(name_elem.text.strip())
 
-        # 6. DOI
         doi_elem = entry.find("arxiv:doi", ns)
         doi = doi_elem.text.strip() if doi_elem is not None and doi_elem.text else ""
 
-        # 7. Tags/Categories
         tags = []
         for cat in entry.findall("atom:category", ns):
             term = cat.attrib.get("term")
             if term:
                 tags.append(term)
 
-        # 8. PDF URL
         pdf_url = ""
         if id_elem is not None and id_elem.text and "/abs/" in id_elem.text:
             raw_arxiv_path = id_elem.text.split("/abs/")[-1].split("v")[0]
@@ -222,10 +309,113 @@ async def fetch_arxiv(query: str, limit: int = 30, offset: int = 0) -> list[dict
     return papers
 
 
+async def fetch_openalex(query: str, limit: int = 30, offset: int = 0) -> list[dict]:
+    """Fetch papers from OpenAlex API (250M+ papers, free, high reliability)."""
+    url = "https://api.openalex.org/works"
+    clean_q = sanitize_search_query(query)
+    
+    page = (offset // max(1, limit)) + 1
+    params = {
+        "search": clean_q,
+        "per-page": min(limit, 50),
+        "page": page,
+    }
+
+    data = None
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, headers=HEADERS, timeout=10.0)
+            if response.status_code == 200:
+                data = response.json()
+            else:
+                logger.warning(f"OpenAlex returned status {response.status_code} for query: {query}")
+                return []
+    except Exception as e:
+        logger.warning(f"Error fetching from OpenAlex: {e}")
+        return []
+
+    if not data or "results" not in data:
+        return []
+
+    papers = []
+    for item in data.get("results", []):
+        raw_id = item.get("id", "")
+        alex_id = raw_id.split("/")[-1] if "/" in raw_id else raw_id
+        id_val = f"oal-{alex_id}" if alex_id else f"oal-{uuid.uuid4().hex[:12]}"
+
+        # Extract DOI
+        doi_raw = item.get("doi") or ""
+        doi = doi_raw.replace("https://doi.org/", "").strip() if doi_raw else ""
+
+        # Extract Title & Abstract
+        title = clean_text(item.get("title") or "")
+        if not title:
+            continue
+
+        abstract = reconstruct_openalex_abstract(item.get("abstract_inverted_index"))
+
+        # Year & Citations
+        year = item.get("publication_year") or _CURRENT_YEAR
+        citations = item.get("cited_by_count") or 0
+
+        # Venue / Journal
+        primary_loc = item.get("primary_location") or {}
+        source = primary_loc.get("source") or {}
+        journal = clean_text(source.get("display_name")) or "Academic Publication"
+
+        # PDF URL
+        pdf_url = primary_loc.get("pdf_url") or ""
+        if not pdf_url:
+            open_access = item.get("open_access") or {}
+            pdf_url = open_access.get("oa_url") or ""
+
+        # Authors
+        authors = []
+        for auth in item.get("authorships") or []:
+            author_obj = auth.get("author") or {}
+            name = author_obj.get("display_name")
+            if name:
+                authors.append(name.strip())
+
+        # Tags / Concepts
+        tags = []
+        for concept in item.get("concepts") or []:
+            name = concept.get("display_name")
+            if name:
+                tags.append(name.strip())
+
+        papers.append({
+            "id": id_val,
+            "title": title,
+            "authors": authors,
+            "year": year,
+            "journal": journal,
+            "citations": citations,
+            "relevance": 0.0,
+            "abstract": abstract,
+            "tags": tags[:6],
+            "doi": doi,
+            "addedAt": "Just now",
+            "status": "unread",
+            "summary": {
+                "objective": "",
+                "methodology": "",
+                "dataset": "",
+                "results": "",
+                "limitations": ""
+            },
+            "gaps": [],
+            "future": [],
+            "pdf_url": pdf_url,
+        })
+
+    return papers
+
+
 async def fetch_semantic_scholar(query: str, limit: int = 30, offset: int = 0) -> list[dict]:
-    """Fetch papers from the Semantic Scholar API with retry, API key, and pagination."""
+    """Fetch papers from Semantic Scholar API with retry and API key handling."""
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
-    clean_q = re.sub(r'["\'+]', " ", query).strip()
+    clean_q = sanitize_search_query(query)
     params = {
         "query": clean_q,
         "offset": offset,
@@ -241,29 +431,20 @@ async def fetch_semantic_scholar(query: str, limit: int = 30, offset: int = 0) -
     for attempt in range(2):
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params, headers=headers, timeout=12.0)
+                response = await client.get(url, params=params, headers=headers, timeout=10.0)
                 if response.status_code == 200:
                     data = response.json()
                     break
                 elif response.status_code == 429 and attempt == 0:
-                    logger.warning("Semantic Scholar API rate limited (429), retrying after 1s...")
+                    logger.debug("Semantic Scholar API rate limited (429), retrying after 1s...")
                     await asyncio.sleep(1.0)
                     continue
                 elif response.status_code == 429:
-                    logger.warning("Semantic Scholar API rate limited (429).")
+                    logger.debug("Semantic Scholar API rate limited (429).")
                     return []
                 else:
-                    logger.warning(f"Semantic Scholar API returned status {response.status_code} for query: {query}")
                     return []
-        except httpx.TimeoutException:
-            if attempt == 0:
-                logger.warning(f"Semantic Scholar timeout on attempt 1 for: {query}, retrying...")
-                await asyncio.sleep(1.0)
-                continue
-            logger.error(f"Semantic Scholar API timed out for query: {query}")
-            return []
-        except Exception as e:
-            logger.error(f"Error fetching from Semantic Scholar: {e}", exc_info=True)
+        except Exception:
             return []
 
     if not data:
@@ -324,10 +505,10 @@ async def fetch_semantic_scholar(query: str, limit: int = 30, offset: int = 0) -
 
 
 def merge_papers(p1: dict, p2: dict) -> dict:
-    """Merge data from two sources for the same paper, prioritizing higher quality signals."""
+    """Merge data from multiple sources for the same paper, prioritizing higher quality signals."""
     merged = {}
     merged["title"] = p1.get("title") or p2.get("title") or ""
-    merged["abstract"] = p1.get("abstract") or p2.get("abstract") or ""
+    merged["abstract"] = p1.get("abstract") if len(p1.get("abstract") or "") > len(p2.get("abstract") or "") else (p2.get("abstract") or "")
     merged["year"] = p1.get("year") or p2.get("year") or _CURRENT_YEAR
     
     a1 = p1.get("authors") or []
@@ -336,12 +517,12 @@ def merge_papers(p1: dict, p2: dict) -> dict:
     
     j1 = p1.get("journal") or ""
     j2 = p2.get("journal") or ""
-    if j1.lower() == "arxiv" and j2 and j2.lower() != "arxiv":
+    if j1.lower() in ("arxiv", "openalex", "semantic scholar") and j2 and j2.lower() not in ("arxiv", "openalex", "semantic scholar"):
         merged["journal"] = j2
-    elif j2.lower() == "arxiv" and j1 and j1.lower() != "arxiv":
+    elif j2.lower() in ("arxiv", "openalex", "semantic scholar") and j1 and j1.lower() not in ("arxiv", "openalex", "semantic scholar"):
         merged["journal"] = j1
     else:
-        merged["journal"] = j1 or j2 or "arXiv"
+        merged["journal"] = j1 or j2 or "Academic Publication"
         
     c1 = p1.get("citations") or 0
     c2 = p2.get("citations") or 0
@@ -400,13 +581,13 @@ def deduplicate_papers(papers: list[dict]) -> list[dict]:
             
             id1 = paper.get("id", "")
             id2 = existing.get("id", "")
-            if id1.startswith("arx-") and id2.startswith("arx-") and id1 == id2:
+            if id1 and id2 and id1 == id2:
                 match_idx = idx
                 break
                 
             t1 = normalize_title(paper.get("title", ""))
             t2 = normalize_title(existing.get("title", ""))
-            if t1 and t2 and t1 == t2:
+            if t1 and t2 and t1 == t2 and len(t1) > 10:
                 match_idx = idx
                 break
                 
@@ -419,33 +600,33 @@ def deduplicate_papers(papers: list[dict]) -> list[dict]:
 
 
 async def search_papers(query: str, page: int = 1, limit: int = 30) -> list[dict]:
-    """Perform concurrent fetch from arXiv and Semantic Scholar with pagination and query expansion."""
-    expansions = expand_query(query)
-    primary_query = expansions[0] if expansions else query
+    """Perform concurrent multi-source retrieval (arXiv, OpenAlex, Semantic Scholar) with AI query reformulation."""
+    # 1. Reformulate query with fast LLM / sanitization
+    smart_query = await reformulate_query_llm(query)
+    expansions = expand_query(smart_query)
+    primary_query = expansions[0] if expansions else smart_query
     offset = max(0, (page - 1) * limit)
 
+    # 2. Concurrently fetch across arXiv, OpenAlex, and Semantic Scholar
     arxiv_task = fetch_arxiv(primary_query, limit=limit, offset=offset)
+    openalex_task = fetch_openalex(primary_query, limit=limit, offset=offset)
     s2_task = fetch_semantic_scholar(primary_query, limit=limit, offset=offset)
     
-    results = await asyncio.gather(arxiv_task, s2_task, return_exceptions=True)
+    results = await asyncio.gather(arxiv_task, openalex_task, s2_task, return_exceptions=True)
     
-    arxiv_papers = results[0] if not isinstance(results[0], Exception) else []
-    s2_papers = results[1] if not isinstance(results[1], Exception) else []
+    arxiv_papers = results[0] if isinstance(results[0], list) else []
+    openalex_papers = results[1] if isinstance(results[1], list) else []
+    s2_papers = results[2] if isinstance(results[2], list) else []
     
-    if isinstance(results[0], Exception):
-        logger.error(f"arXiv query exception: {results[0]}")
-    if isinstance(results[1], Exception):
-        logger.error(f"Semantic Scholar query exception: {results[1]}")
-        
-    all_papers = arxiv_papers + s2_papers
+    all_papers = arxiv_papers + openalex_papers + s2_papers
     deduped = deduplicate_papers(all_papers)
 
-    # If first page returned sparse results, fallback to academic expansion
+    # 3. If first page returned sparse results, fallback to alternative query expansions
     if page == 1 and len(deduped) < 5 and len(expansions) > 1:
         fallback_tasks = []
         for alt_query in expansions[1:]:
             fallback_tasks.append(fetch_arxiv(alt_query, limit=limit, offset=0))
-            fallback_tasks.append(fetch_semantic_scholar(alt_query, limit=limit, offset=0))
+            fallback_tasks.append(fetch_openalex(alt_query, limit=limit, offset=0))
         
         fallback_results = await asyncio.gather(*fallback_tasks, return_exceptions=True)
         for fb in fallback_results:

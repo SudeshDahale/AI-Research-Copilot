@@ -20,7 +20,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sse_starlette.sse import EventSourceResponse
 
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user_optional
 from app.models.user import User
 from app.schemas.agent import AgentRunRequest
 from app.agents.nodes.retrieve import retrieve_node
@@ -45,13 +45,19 @@ def _sse(event: str, data: dict) -> dict:
 @router.post("/run", dependencies=[Depends(agent_rate_limiter)])
 async def run_agent(
     body: AgentRunRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
+    current_user: Annotated[User | None, Depends(get_current_user_optional)] = None,
 ):
     async def event_stream():
         t_start = time.monotonic()
 
         # ── 0. Workspace Ownership Check (Sprint 9) ──────────────────────────
         if body.workspace_id:
+            if not current_user:
+                yield _sse("error", {
+                    "code": "unauthorized",
+                    "message": "Please log in to access workspace agents.",
+                })
+                return
             try:
                 ws_uuid = uuid.UUID(body.workspace_id)
                 async with AsyncSessionLocal() as db:
@@ -83,6 +89,7 @@ async def run_agent(
             "query": body.query,
             "workspace_id": body.workspace_id,
             "intent": intent,
+            "papers": body.papers,
         })
 
         papers = retrieval_state.get("papers", [])
@@ -154,14 +161,10 @@ async def run_agent(
 
             raw_deep_text = deep_res.get("final_text") or ""
             
-            # If the user asked for a table / custom format and the fast stream delivered it,
-            # preserve the user's requested format instead of overriding with a canned template.
-            query_lower = body.query.lower()
-            wants_table = any(kw in query_lower for kw in ("tabl", "matrix", "grid"))
-            
-            if wants_table and ("|" in fast_text):
-                deep_final_text = fast_text
-            elif intent == "generic" and fast_text and len(fast_text) > 80:
+            # Preserve direct, rich fast_text answers over rigid canned outlines
+            if intent == "literature_review" and raw_deep_text and len(raw_deep_text) > 200:
+                deep_final_text = raw_deep_text
+            elif fast_text and len(fast_text) > 80:
                 deep_final_text = fast_text
             else:
                 deep_final_text = raw_deep_text or fast_text

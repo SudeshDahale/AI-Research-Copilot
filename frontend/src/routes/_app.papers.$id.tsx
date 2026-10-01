@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api";
 import { getCachedPapers, cachePapers, searchCachedPapers } from "@/lib/paper-cache";
 import { useWorkspaces } from "@/lib/workspaces";
+import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/_app/papers/$id")({
   loader: async ({ params }) => {
@@ -76,6 +77,7 @@ function PaperPage() {
   const [notification, setNotification] = useState<string | null>(null);
 
   const { workspaces, create, addPapers } = useWorkspaces();
+  const { isGuest, openLoginModal } = useAuth();
 
   const notify = (msg: string) => {
     setNotification(msg);
@@ -129,12 +131,29 @@ function PaperPage() {
   };
 
   const handleAddToWorkspace = (wsId: string) => {
+    if (isGuest) {
+      setWsDropdownOpen(false);
+      openLoginModal({
+        title: "Log in to add to workspace",
+        message: "Workspaces require an account to curate papers. Please log in with shlok@mail.com.",
+      });
+      return;
+    }
     addPapers(wsId, [paper.id]);
     setWsDropdownOpen(false);
     notify("Paper added to workspace");
   };
 
   const handleCreateWorkspace = () => {
+    if (isGuest) {
+      setWsDropdownOpen(false);
+      openLoginModal({
+        title: "Log in to create a workspace",
+        message:
+          "Guests can explore papers freely. Log in with shlok@mail.com to create workspaces and save collections.",
+      });
+      return;
+    }
     const name = prompt("Name this workspace:", `${paper.title.slice(0, 32)}… Workspace`);
     if (!name) return;
     create(name, [paper.id], [paper]);

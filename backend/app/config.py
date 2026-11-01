@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     # --- Auth (wired up in Sprint 1) ---
-    jwt_secret: str = "change-me-to-a-random-secret"
+    jwt_secret: str = "change-me-to-a-random-secret-at-least-32-chars"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24
 
@@ -56,11 +56,19 @@ class Settings(BaseSettings):
         """Bug fix: raise early if insecure default JWT secret is used in production.
         Without this, a mis-configured deployment silently starts with a known-weak secret.
         """
-        _INSECURE_DEFAULT = "change-me-to-a-random-secret"
-        if self.environment == "production" and self.jwt_secret == _INSECURE_DEFAULT:
+        _insecure_defaults = {
+            "change-me-to-a-random-secret",
+            "change-me-to-a-long-random-secret",
+            "change-me-to-a-random-secret-at-least-32-chars",
+        }
+        if self.environment == "production" and self.jwt_secret in _insecure_defaults:
             raise RuntimeError(
                 "JWT_SECRET must be overridden in production. "
                 "Set the JWT_SECRET environment variable to a strong random secret."
+            )
+        if self.environment == "production" and self.jwt_algorithm.startswith("HS") and len(self.jwt_secret.encode("utf-8")) < 32:
+            raise RuntimeError(
+                "JWT_SECRET must be at least 32 bytes for HMAC algorithms in production."
             )
         return self
 

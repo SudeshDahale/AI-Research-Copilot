@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Search, Library, FileText, LogOut, LogIn, Plus, FolderKanban, Lock } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { getProfessionInfo } from "@/lib/professions";
 
 const NAV = [
   { to: "/search", label: "Discover", icon: Search, guestAllowed: true },
@@ -23,6 +24,19 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [loading, session, navigate]);
 
+  if (loading) {
+    return (
+      <div className="stage-bg flex min-h-screen w-full items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-accent shadow-md flex items-center justify-center animate-pulse">
+            <span className="h-3 w-3 rounded-full bg-white" />
+          </div>
+          <span className="text-xs text-muted-foreground animate-pulse">Opening workspace...</span>
+        </div>
+      </div>
+    );
+  }
+
   if (!session) return null;
 
   const initials = session.name
@@ -33,6 +47,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         .join("")
         .toUpperCase()
     : "G";
+
+  const profInfo = getProfessionInfo(session.profession);
 
   return (
     <div className="stage-bg relative flex min-h-screen w-full">
@@ -82,7 +98,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     e.preventDefault();
                     openLoginModal({
                       title: `Log in to access ${item.label}`,
-                      message: `${item.label} and AI research features require an account to prevent token usage. Log in to continue.`,
+                      message: `${item.label} and AI research features require an account to prevent token usage. Log in or create an account to continue.`,
                       onSuccess: () => navigate({ to: item.to }),
                     });
                   }
@@ -122,12 +138,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className="btn-pop shrink-0 rounded-md p-1.5 text-primary hover:bg-primary/10 transition-colors"
                   onClick={() =>
                     openLoginModal({
-                      title: "Log in to Arclight",
-                      message: "Sign in to save papers into workspaces and unlock the full AI Research Copilot.",
+                      title: "Log in or Create Account",
+                      message: "Sign in or register to save papers into workspaces and unlock the full AI Research Copilot.",
+                      onSuccess: () => navigate({ to: "/search" }),
                     })
                   }
-                  title="Log in"
-                  aria-label="Log in"
+                  title="Log in or Register"
+                  aria-label="Log in or Register"
                 >
                   <LogIn className="h-4 w-4" />
                 </button>
@@ -139,9 +156,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {initials}
               </div>
               <div className="min-w-0 flex-1 overflow-hidden opacity-0 transition-opacity duration-200 group-data-[open=true]/sidebar:opacity-100">
-                <div className="truncate text-sm text-sidebar-foreground">{session.name}</div>
-                <div className="truncate text-xs text-muted-foreground">
-                  {session.email || "Member"}
+                <div className="truncate text-sm font-medium text-sidebar-foreground">{session.name}</div>
+                <div className="truncate text-[10px] text-primary font-medium flex items-center gap-1">
+                  <span>{profInfo.badge}</span>
                 </div>
               </div>
               <button
@@ -158,6 +175,16 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         </div>
       </aside>
+
+      {/* Floating UX badge showing tailored copilot mode based on profession */}
+      {!isGuest && session?.profession && (
+        <div className="fixed top-3 right-4 z-20 hidden lg:flex items-center gap-2 rounded-full border border-primary/20 bg-card/85 backdrop-blur-md px-3 py-1 text-xs text-foreground/80 shadow-sm transition-all hover:border-primary/40">
+          <div className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="font-medium text-primary">{profInfo.badge}</span>
+          <span className="text-muted-foreground">•</span>
+          <span className="text-[11px] text-muted-foreground truncate max-w-xs">{profInfo.tagline}</span>
+        </div>
+      )}
 
       <main className="relative z-10 min-w-0 flex-1 md:pl-16">{children}</main>
     </div>

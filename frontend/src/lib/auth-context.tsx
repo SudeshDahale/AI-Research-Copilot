@@ -1,10 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { getSession, login as sessionLogin, clearSession, type Session } from "@/lib/session";
+import {
+  getSession,
+  login as sessionLogin,
+  register as sessionRegister,
+  enterAsGuest,
+  clearSession,
+  type Session,
+} from "@/lib/session";
 import { useQueryClient } from "@tanstack/react-query";
 
 export type AuthModalOptions = {
   title?: string;
   message?: string;
+  defaultTab?: "login" | "signup";
   onSuccess?: () => void;
 };
 
@@ -17,7 +25,14 @@ interface AuthContextType {
   modalOptions: AuthModalOptions;
   openLoginModal: (options?: AuthModalOptions) => void;
   closeLoginModal: () => void;
-  loginUser: (email: string, password: string) => Promise<Session>;
+  loginUser: (identifier: string, password: string) => Promise<Session>;
+  registerUser: (params: {
+    username: string;
+    email: string;
+    password: string;
+    profession: string;
+  }) => Promise<Session>;
+  loginAsGuest: () => Session;
   logoutUser: () => Promise<void>;
   refreshSession: () => Promise<Session | null>;
 }
@@ -55,15 +70,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginUser = useCallback(
-    async (email: string, password: string): Promise<Session> => {
-      const newSession = await sessionLogin(email, password);
+    async (identifier: string, password: string): Promise<Session> => {
+      const newSession = await sessionLogin(identifier, password);
       setSession(newSession);
-      // Invalidate queries so that server workspaces, reviews, etc. update immediately
       queryClient.invalidateQueries({ queryKey: ["workspaces"] });
       return newSession;
     },
     [queryClient],
   );
+
+  const registerUser = useCallback(
+    async (params: {
+      username: string;
+      email: string;
+      password: string;
+      profession: string;
+    }): Promise<Session> => {
+      const newSession = await sessionRegister(params);
+      setSession(newSession);
+      queryClient.invalidateQueries({ queryKey: ["workspaces"] });
+      return newSession;
+    },
+    [queryClient],
+  );
+
+  const loginAsGuest = useCallback(() => {
+    const s = enterAsGuest();
+    setSession(s);
+    return s;
+  }, []);
 
   const logoutUser = useCallback(async () => {
     await clearSession();
@@ -86,6 +121,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         openLoginModal,
         closeLoginModal,
         loginUser,
+        registerUser,
+        loginAsGuest,
         logoutUser,
         refreshSession,
       }}

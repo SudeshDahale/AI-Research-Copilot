@@ -17,23 +17,42 @@ import redis.asyncio as aioredis
 from app.config import settings
 from app.core.logging import logger
 
+import time
+
 # ---------------------------------------------------------------------------
 # Client — one lazily-created connection pool shared across the process
 # ---------------------------------------------------------------------------
 
 _redis_client: aioredis.Redis | None = None
+_redis_available: bool = True
+_last_redis_check: float = 0.0
+_REDIS_RETRY_COOLDOWN: float = 30.0  # seconds between reconnection attempts when offline
+_has_logged_redis_offline: bool = False
+
+# Resilient in-memory cache fallback: { key: (expiry_timestamp, data) }
+_memory_cache: dict[str, tuple[float, Any]] = {}
 
 
 def get_redis() -> aioredis.Redis:
-    """Return the (lazily-initialised) async Redis client."""
+    """Return the (lazily-initialised) async Redis client with fast timeout."""
     global _redis_client
     if _redis_client is None:
         _redis_client = aioredis.from_url(
             settings.redis_url,
             encoding="utf-8",
             decode_responses=True,
+            socket_connect_timeout=0.75,
+            socket_timeout=0.75,
         )
     return _redis_client
+
+
+def is_redis_online() -> bool:
+    """Check if Redis is considered available without blocking on dead sockets."""
+    global _redis_available, _last_redis_check
+    if _redis_available:
+        return True
+    return (time.time() - _last_redis_check) > _REDIS_RETRY_COOLDOWN
 
 
 # ---------------------------------------------------------------------------
@@ -50,25 +69,62 @@ def _make_key(prefix: str, raw: str) -> str:
 
 
 async def cache_get(key: str) -> Any | None:
-    """Return deserialised value from Redis, or None on cache miss / error."""
-    try:
-        client = get_redis()
-        raw = await client.get(key)
-        if raw is None:
-            return None
-        return json.loads(raw)
-    except Exception as exc:  # pragma: no cover
-        logger.warning(f"Redis cache GET failed for key={key!r}: {exc}")
-        return None
+    """Return deserialised value from Redis or in-memory fallback, or None on miss."""
+    global _redis_available, _last_redis_check, _has_logged_redis_offline
+    now = time.time()
+
+    # 1. Try Redis if it is online
+    if is_redis_online():
+        try:
+            client = get_redis()
+            raw = await client.get(key)
+            _redis_available = True
+            if raw is not None:
+                val = json.loads(raw)
+                _memory_cache[key] = (now + SEARCH_TTL_SECONDS, val)
+                return val
+            # Key not found in Redis, check memory cache
+        except Exception as exc:  # pragma: no cover
+            _redis_available = False
+            _last_redis_check = time.time()
+            if not _has_logged_redis_offline:
+                logger.info(f"Redis is offline ({exc}) — falling back to in-memory caching.")
+                _has_logged_redis_offline = True
+            else:
+                logger.debug(f"Redis cache GET failed for key={key!r}: {exc}")
+
+    # 2. In-memory cache fallback
+    if key in _memory_cache:
+        exp, val = _memory_cache[key]
+        if exp > now:
+            return val
+        _memory_cache.pop(key, None)
+
+    return None
 
 
 async def cache_set(key: str, value: Any, ttl: int = SEARCH_TTL_SECONDS) -> None:
     """Serialise *value* to JSON and store it with *ttl* seconds expiry."""
-    try:
-        client = get_redis()
-        await client.setex(key, ttl, json.dumps(value))
-    except Exception as exc:  # pragma: no cover
-        logger.warning(f"Redis cache SET failed for key={key!r}: {exc}")
+    global _redis_available, _last_redis_check, _has_logged_redis_offline
+    now = time.time()
+
+    # Always write to memory cache fallback
+    _memory_cache[key] = (now + ttl, value)
+
+    # Write to Redis if online
+    if is_redis_online():
+        try:
+            client = get_redis()
+            await client.setex(key, ttl, json.dumps(value))
+            _redis_available = True
+        except Exception as exc:  # pragma: no cover
+            _redis_available = False
+            _last_redis_check = time.time()
+            if not _has_logged_redis_offline:
+                logger.info(f"Redis is offline ({exc}) — falling back to in-memory caching.")
+                _has_logged_redis_offline = True
+            else:
+                logger.debug(f"Redis cache SET failed for key={key!r}: {exc}")
 
 
 # ---------------------------------------------------------------------------

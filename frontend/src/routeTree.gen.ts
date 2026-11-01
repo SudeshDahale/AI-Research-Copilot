@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppDiscoverRouteImport } from './routes/_app.discover'
 import { Route as AppLibraryRouteImport } from './routes/_app.library'
 import { Route as AppReviewRouteImport } from './routes/_app.review'
 import { Route as AppSearchRouteImport } from './routes/_app.search'
@@ -26,6 +27,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppDiscoverRoute = AppDiscoverRouteImport.update({
+  id: '/discover',
+  path: '/discover',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppLibraryRoute = AppLibraryRouteImport.update({
   id: '/library',
@@ -60,6 +66,7 @@ const AppWorkflowIdRoute = AppWorkflowIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/discover': typeof AppDiscoverRoute
   '/library': typeof AppLibraryRoute
   '/review': typeof AppReviewRoute
   '/search': typeof AppSearchRoute
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/discover': typeof AppDiscoverRoute
   '/library': typeof AppLibraryRoute
   '/review': typeof AppReviewRoute
   '/search': typeof AppSearchRoute
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/_app/discover': typeof AppDiscoverRoute
   '/_app/library': typeof AppLibraryRoute
   '/_app/review': typeof AppReviewRoute
   '/_app/search': typeof AppSearchRoute
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/discover'
     | '/library'
     | '/review'
     | '/search'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/discover'
     | '/library'
     | '/review'
     | '/search'
@@ -110,6 +121,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/_app/discover'
     | '/_app/library'
     | '/_app/review'
     | '/_app/search'
@@ -138,6 +150,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/discover': {
+      id: '/_app/discover'
+      path: '/discover'
+      fullPath: '/discover'
+      preLoaderRoute: typeof AppDiscoverRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/library': {
       id: '/_app/library'
@@ -185,6 +204,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppRouteChildren {
+  AppDiscoverRoute: typeof AppDiscoverRoute
   AppLibraryRoute: typeof AppLibraryRoute
   AppReviewRoute: typeof AppReviewRoute
   AppSearchRoute: typeof AppSearchRoute
@@ -194,6 +214,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppDiscoverRoute: AppDiscoverRoute,
   AppLibraryRoute: AppLibraryRoute,
   AppReviewRoute: AppReviewRoute,
   AppSearchRoute: AppSearchRoute,

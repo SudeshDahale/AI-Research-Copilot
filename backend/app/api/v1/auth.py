@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing_extensions import Annotated
 
@@ -39,17 +40,35 @@ async def register(
     response: Response,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
-    existing = await db.execute(select(User).where(User.email == body.email))
+    username = (body.username or body.name or "").strip()
+    if not username:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Username is required",
+        )
+
+    clean_email = str(body.email).lower().strip()
+    existing = await db.execute(
+        select(User).where(
+            or_(
+                func.lower(User.email) == clean_email,
+                func.lower(User.name) == username.lower(),
+            )
+        )
+    )
     if existing.scalar_one_or_none() is not None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="An account with this email already exists",
+            detail="An account with this email or username already exists",
         )
 
+    profession = (body.profession or "Academic Researcher").strip()
     user = User(
-        email=body.email,
-        name=body.name,
+        id=uuid.uuid4(),
+        email=clean_email,
+        name=username,
         hashed_password=hash_password(body.password),
+        profession=profession,
     )
     db.add(user)
     await db.commit()
@@ -67,10 +86,21 @@ async def login(
 ) -> User:
     invalid_credentials = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Incorrect email or password",
+        detail="Incorrect username/email or password",
     )
 
-    result = await db.execute(select(User).where(User.email == body.email))
+    identifier = (body.identifier or body.username or body.email or "").strip()
+    if not identifier:
+        raise invalid_credentials
+
+    result = await db.execute(
+        select(User).where(
+            or_(
+                func.lower(User.email) == identifier.lower(),
+                func.lower(User.name) == identifier.lower(),
+            )
+        )
+    )
     user = result.scalar_one_or_none()
     if user is None or not verify_password(body.password, user.hashed_password):
         raise invalid_credentials

@@ -15,6 +15,18 @@ configure_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("%s starting up (environment=%s)", settings.app_name, settings.environment)
+    # Self-healing check: ensure 'profession' column exists on users table
+    try:
+        from app.db.session import engine
+        from sqlalchemy import text
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("ALTER TABLE users ADD COLUMN IF NOT EXISTS profession VARCHAR(120) DEFAULT 'Academic Researcher';")
+            )
+        logger.info("Checked/verified 'profession' column on users table.")
+    except Exception as exc:
+        logger.warning("Automatic column check for 'profession' skipped or deferred: %s", exc)
+
     yield
     logger.info("%s shutting down", settings.app_name)
 

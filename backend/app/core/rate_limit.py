@@ -12,7 +12,7 @@ from typing import Callable
 
 from fastapi import Depends, HTTPException, Request, status
 
-from app.core.cache import get_redis
+from app.core.cache import get_redis, is_redis_online
 from app.core.logging import logger
 from app.dependencies import get_current_user_optional
 from app.models.user import User
@@ -52,29 +52,30 @@ class RateLimiter:
         now = time.time()
         window_start = now - self.window_seconds
 
-        # 1. Try Redis sliding window with sorted set (ZADD/ZREMRANGEBYSCORE/ZCARD)
-        try:
-            redis = get_redis()
-            pipe = redis.pipeline()
-            pipe.zremrangebyscore(key, 0, window_start)
-            pipe.zadd(key, {str(now): now})
-            pipe.zcard(key)
-            pipe.expire(key, self.window_seconds + 5)
-            results = await pipe.execute()
-            current_count = results[2]
+        # 1. Try Redis sliding window with sorted set if Redis is online
+        if is_redis_online():
+            try:
+                redis = get_redis()
+                pipe = redis.pipeline()
+                pipe.zremrangebyscore(key, 0, window_start)
+                pipe.zadd(key, {str(now): now})
+                pipe.zcard(key)
+                pipe.expire(key, self.window_seconds + 5)
+                results = await pipe.execute()
+                current_count = results[2]
 
-            if current_count > self.requests_per_minute:
-                logger.warning(f"Rate limit exceeded (Redis) for key={key}: {current_count}/{self.requests_per_minute} req/min")
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail=f"Rate limit exceeded. Maximum {self.requests_per_minute} requests per minute allowed.",
-                    headers={"Retry-After": str(self.window_seconds)},
-                )
-            return
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.debug(f"Redis rate limiter unavailable ({exc}) — falling back to in-memory window")
+                if current_count > self.requests_per_minute:
+                    logger.warning(f"Rate limit exceeded (Redis) for key={key}: {current_count}/{self.requests_per_minute} req/min")
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail=f"Rate limit exceeded. Maximum {self.requests_per_minute} requests per minute allowed.",
+                        headers={"Retry-After": str(self.window_seconds)},
+                    )
+                return
+            except HTTPException:
+                raise
+            except Exception as exc:
+                logger.debug(f"Redis rate limiter unavailable ({exc}) — falling back to in-memory window")
 
         # 2. In-memory sliding window fallback
         timestamps = _memory_rate_limit_store[key]
